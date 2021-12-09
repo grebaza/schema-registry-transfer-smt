@@ -72,9 +72,11 @@
         <jackson.version>2.9.7</jackson.version>
         <jackson.asl.version>1.9.13</jackson.asl.version>
 
-        <spotless.version>1.19.0</spotless.version>
+        <spotless.version>2.4.1</spotless.version>
 
         <shade.prefix>cricket.jmoore</shade.prefix>
+        <kafka.connect.maven.plugin.version>0.11.1</kafka.connect.maven.plugin.version>
+        <maven.release.plugin.version>2.5.3</maven.release.plugin.version>
     </properties>
 
     <dependencies>
@@ -249,8 +251,14 @@
         </pluginManagement>
         <plugins>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-release-plugin</artifactId>
-                <version>2.5.3</version>
+                <version>${maven.release.plugin.version}</version>
+                <configuration>
+                    <autoVersionSubmodules>true</autoVersionSubmodules>
+                    <remoteTagging>false</remoteTagging>
+                    <tagNameFormat>v@{project.version}</tagNameFormat>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -299,7 +307,7 @@
             <plugin>
                 <groupId>io.confluent</groupId>
                 <artifactId>kafka-connect-maven-plugin</artifactId>
-                <version>0.11.1</version>
+                <version>${kafka.connect.maven.plugin.version}</version>
                 <configuration>
                     <title>Avro Schema Transformer</title>
                     <!--<documentationUrl>https://jmoore.cricket/kafka-connect-documentation/</documentationUrl>-->
@@ -327,10 +335,10 @@
                         <licenseHeader>
                             <content>/* Licensed under Apache-2.0 */</content>
                         </licenseHeader>
-                        <!--<googleJavaFormat>-->
-                        <!--<version>1.7</version>-->
-                        <!--<style>GOOGLE</style>-->
-                        <!--</googleJavaFormat>-->
+                        <googleJavaFormat>
+                          <version>1.8</version>
+                          <style>GOOGLE</style>
+                        </googleJavaFormat>
                         <removeUnusedImports />
                         <importOrder>
                             <order>java,org,io.confluent,com,cricket.jmoore,</order>
@@ -345,6 +353,33 @@
                         </goals>
                     </execution>
                 </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-checkstyle-plugin</artifactId>
+                <version>3.1.1</version>
+                <executions>
+                    <execution>
+                        <id>validate</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                  <suppressionsLocation>checkstyle/suppressions.xml</suppressionsLocation>
+                  <checkstyleRules>
+                    <module name="Checker">
+                    <module name="TreeWalker">
+                      <module name="ConstantName">
+                        <property name="format"
+                          value="^log(ger)?$|^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$"/>
+                      </module>
+                    </module>
+                    </module>
+                  </checkstyleRules>
+                </configuration>
             </plugin>
         </plugins>
     </build>
