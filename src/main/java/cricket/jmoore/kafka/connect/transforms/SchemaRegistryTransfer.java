@@ -208,14 +208,13 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
         if (key == null) {
           log.trace("Passing through null record key.");
         } else {
-          byte[] keyAsBytes = (byte[]) key; // TODO: Verifiy secure alternative
+          byte[] keyAsBytes = (byte[]) key; // TODO: Verify secure alternative
           int keyByteLength = keyAsBytes.length;
           if (keyByteLength <= KEY_VALUE_MIN_LEN) {
             throw new SerializationException(
                 "Unexpected byte[] length " + keyByteLength + " for Avro record key.");
           }
-          ByteBuffer b =
-              ByteBuffer.wrap(keyAsBytes); // TODO: Verifiy secure alternative
+          ByteBuffer b = ByteBuffer.wrap(keyAsBytes); // TODO: Verify secure alternative
 
           destKeySchemaId = copySchema(b, topic, true);
           b.putInt(
