@@ -9,13 +9,13 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
-import org.apache.avro.Schema;
 import org.junit.jupiter.api.extension.AfterEachCallback;
 import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import io.confluent.kafka.schemaregistry.avro.AvroSchema;
 import io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.MockSchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.SchemaMetadata;
@@ -70,10 +70,10 @@ import com.google.common.collect.Iterables;
  *
  *     {@literal @Test}
  *     void shouldRegisterKeySchema() throws IOException, RestClientException {
- *         final Schema keySchema = this.createSchema("key_schema");
+ *         final AvroSchema keySchema = this.createSchema("key_schema");
  *         final int id = this.schemaRegistry.registerKeySchema("test-topic", keySchema);
  *
- *         final Schema retrievedSchema = this.schemaRegistry.getSchemaRegistryClient().getById(id);
+ *         final AvroSchema retrievedSchema = this.schemaRegistry.getSchemaRegistryClient().getSchemaById(id);
  *         assertThat(retrievedSchema).isEqualTo(keySchema);
  *     }
  *
@@ -181,19 +181,16 @@ public class SchemaRegistryMock implements BeforeEachCallback, AfterEachCallback
             .willReturn(WireMock.aResponse().withStatus(HTTP_NOT_FOUND)));
   }
 
-  public int registerSchema(final String topic, boolean isKey, final Schema schema) {
+  public int registerSchema(final String topic, boolean isKey, final AvroSchema schema) {
     return this.registerSchema(topic, isKey, schema, new TopicNameStrategy());
   }
 
   public int registerSchema(
-      final String topic,
-      boolean isKey,
-      final Schema schema,
-      SubjectNameStrategy<Schema> strategy) {
+      final String topic, boolean isKey, final AvroSchema schema, SubjectNameStrategy strategy) {
     return this.register(strategy.subjectName(topic, isKey, schema), schema);
   }
 
-  private int register(final String subject, final Schema schema) {
+  private int register(final String subject, final AvroSchema schema) {
     try {
       final int id = this.schemaRegistryClient.register(subject, schema);
       this.stubFor.apply(
@@ -278,8 +275,8 @@ public class SchemaRegistryMock implements BeforeEachCallback, AfterEachCallback
         final int id =
             SchemaRegistryMock.this.register(
                 getSubject(request),
-                new Schema.Parser()
-                    .parse(RegisterSchemaRequest.fromJson(request.getBodyAsString()).getSchema()));
+                new AvroSchema(
+                    RegisterSchemaRequest.fromJson(request.getBodyAsString()).getSchema()));
         final RegisterSchemaResponse registerSchemaResponse = new RegisterSchemaResponse();
         registerSchemaResponse.setId(id);
         return ResponseDefinitionBuilder.jsonResponse(registerSchemaResponse);
