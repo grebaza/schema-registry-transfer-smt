@@ -208,13 +208,15 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
         if (key == null) {
           log.trace("Passing through null record key.");
         } else {
-          byte[] keyAsBytes = (byte[]) key;
+          byte[] keyAsBytes = (byte[]) key; // TODO: Verifiy secure alternative
           int keyByteLength = keyAsBytes.length;
           if (keyByteLength <= KEY_VALUE_MIN_LEN) {
             throw new SerializationException(
                 "Unexpected byte[] length " + keyByteLength + " for Avro record key.");
           }
-          ByteBuffer b = ByteBuffer.wrap(keyAsBytes);
+          ByteBuffer b =
+              ByteBuffer.wrap(keyAsBytes); // TODO: Verifiy secure alternative
+
           destKeySchemaId = copySchema(b, topic, true);
           b.putInt(
               1,
@@ -223,6 +225,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
                       new ConnectException(
                           "Transform failed. Unable to update record schema id. (isKey=true)")));
           updatedKey = b.array();
+          b = null;
         }
       } else {
         throw new ConnectException("Transform failed. Record key does not have a byte[] schema.");
@@ -258,6 +261,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
                     new ConnectException(
                         "Transform failed. Unable to update record schema id. (isKey=false)")));
         updatedValue = b.array();
+        b = null;
       }
     } else {
       throw new ConnectException("Transform failed. Record value does not have a byte[] schema.");
@@ -288,6 +292,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
     if (buffer.get() == MAGIC_BYTE) {
       int sourceSchemaId = buffer.getInt();
 
+      log.trace("Looking up schema id {} in Schema Cache", sourceSchemaId);
       schemaAndDestId = schemaCache.get(sourceSchemaId);
       if (schemaAndDestId != null) {
         log.trace(
