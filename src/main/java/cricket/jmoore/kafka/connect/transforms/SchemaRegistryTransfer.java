@@ -206,7 +206,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
       updatedKey = updateKeyValue(key, keySchema, topic, true);
     } else {
       log.trace(
-          "Skipping record key translation. {} has been to false. " + "Keys will be passed as-is.",
+          "Skipping record key translation. {} has been to false. Keys will be passed as-is.",
           ConfigName.TRANSFER_KEYS);
     }
 
@@ -214,9 +214,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
     final Object value = r.value();
     final Schema valueSchema = r.valueSchema();
 
-    Object updatedValue = value;
-
-    updatedValue = updateKeyValue(value, valueSchema, topic, false);
+    Object updatedValue = updateKeyValue(value, valueSchema, topic, false);
 
     return includeHeaders
         ? r.newRecord(
@@ -236,6 +234,43 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
             valueSchema,
             updatedValue,
             r.timestamp());
+  }
+
+  private Object updateKeyValue(Object object, Schema objectSchema, String topic, boolean isKey) {
+    Optional<Integer> destSchemaId;
+    Object updatedKeyValue = null;
+    final String recordPart = isKey == true ? "key" : "value";
+
+    if (ConnectSchemaUtil.isBytesSchema(objectSchema) || object instanceof byte[]) {
+      if (object == null) {
+        log.trace("Passing through null record {}.", recordPart);
+      } else {
+        byte[] objectAsBytes = (byte[]) object; // TODO: Verify secure alternative
+        int objectLength = objectAsBytes.length;
+        if (objectLength <= KEY_VALUE_MIN_LEN) {
+          throw new SerializationException(
+              String.format(
+                  "Unexpected byte[] length %d for Avro record %s.", objectLength, recordPart));
+        }
+        ByteBuffer b = ByteBuffer.wrap(objectAsBytes);
+
+        destSchemaId = copyAvroSchema(b, topic, true);
+        b.putInt(
+            1,
+            destSchemaId.orElseThrow(
+                () ->
+                    new ConnectException(
+                        String.format(
+                            "Transform failed. Unable to update record schema id for %s",
+                            recordPart))));
+        updatedKeyValue = (Object) b.array();
+      }
+    } else {
+      throw new ConnectException(
+          String.format("Transform failed. Record %s does not have a byte[] schema.", recordPart));
+    }
+
+    return updatedKeyValue;
   }
 
   protected Optional<Integer> copyAvroSchema(ByteBuffer buffer, String topic, boolean isKey) {
@@ -338,42 +373,5 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
     public String toString() {
       return "SchemaAndId{" + "id=" + id + ", schema=" + schema + '}';
     }
-  }
-
-  private Object updateKeyValue(Object object, Schema objectSchema, String topic, boolean isKey) {
-    Optional<Integer> destSchemaId;
-    Object updatedKeyValue = null;
-    final String recordPart = isKey == true ? "key" : "value";
-
-    if (ConnectSchemaUtil.isBytesSchema(objectSchema) || object instanceof byte[]) {
-      if (object == null) {
-        log.trace("Passing through null record {}.", recordPart);
-      } else {
-        byte[] objectAsBytes = (byte[]) object; // TODO: Verify secure alternative
-        int objectLength = objectAsBytes.length;
-        if (objectLength <= KEY_VALUE_MIN_LEN) {
-          throw new SerializationException(
-              String.format(
-                  "Unexpected byte[] length %d for Avro record %s.", objectLength, recordPart));
-        }
-        ByteBuffer b = ByteBuffer.wrap(objectAsBytes);
-
-        destSchemaId = copyAvroSchema(b, topic, true);
-        b.putInt(
-            1,
-            destSchemaId.orElseThrow(
-                () ->
-                    new ConnectException(
-                        String.format(
-                            "Transform failed. Unable to update record schema id for %s",
-                            recordPart))));
-        updatedKeyValue = (Object) b.array();
-      }
-    } else {
-      throw new ConnectException(
-          String.format("Transform failed. Record %s does not have a byte[] schema.", recordPart));
-    }
-
-    return updatedKeyValue;
   }
 }
