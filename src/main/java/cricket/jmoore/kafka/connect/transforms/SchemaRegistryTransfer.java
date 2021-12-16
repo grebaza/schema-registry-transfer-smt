@@ -253,6 +253,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
                   "Unexpected byte[] length %d for Avro record %s.", objectLength, recordPart));
         }
         ByteBuffer b = ByteBuffer.wrap(objectAsBytes);
+        log.info("object dump: {}", Utils.bytesToHex(objectAsBytes));
 
         destSchemaId = copyAvroSchema(b, topic, true);
         b.putInt(
