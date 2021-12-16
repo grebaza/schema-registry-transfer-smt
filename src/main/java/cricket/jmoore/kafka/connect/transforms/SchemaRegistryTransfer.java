@@ -275,29 +275,41 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
 
   protected Optional<Integer> copyAvroSchema(ByteBuffer buffer, String topic, boolean isKey) {
     SchemaAndId schemaAndDestId;
+    final String recordPart = isKey == true ? "key" : "value";
+
     if (buffer.get() == MAGIC_BYTE) {
       int sourceSchemaId = buffer.getInt();
 
-      log.info("Looking up schema id {} in Schema Cache", sourceSchemaId);
+      log.info("Looking up schema id {} in Schema Cache for record {}", sourceSchemaId, recordPart);
       schemaAndDestId = schemaCache.get(sourceSchemaId);
       if (schemaAndDestId != null) {
         log.trace(
-            "Schema id {} has been seen before. Not registering with destination registry again.");
+            "Schema id {} has been seen before. Not registering with destination registry again for record {}",
+            recordPart);
       } else { // cache miss
-        log.info("Schema id {} has not been seen before", sourceSchemaId);
+        log.info("Schema id {} has not been seen before for record {}", sourceSchemaId, recordPart);
         schemaAndDestId = new SchemaAndId();
         try {
-          log.info("Looking up schema id {} in source registry", sourceSchemaId);
+          log.info(
+              "Looking up schema id {} in source registry for record {}",
+              sourceSchemaId,
+              recordPart);
           // Can't do getBySubjectAndId because that requires a Schema object for the strategy
           schemaAndDestId.schema =
               (AvroSchema) sourceSchemaRegistryClient.getSchemaById(sourceSchemaId);
         } catch (IOException | RestClientException e) {
-          log.info(String.format("Unable to fetch source schema for id %d.", sourceSchemaId), e);
+          log.info(
+              String.format(
+                  "Unable to fetch source schema id %d for record %s", sourceSchemaId, recordPart),
+              e);
           throw new ConnectException(e);
         }
 
         try {
-          log.info("Registering schema {} to destination registry", schemaAndDestId.schema);
+          log.info(
+              "Registering schema {} to destination registry for record {}",
+              schemaAndDestId.schema,
+              recordPart);
           // It could be possible that the destination naming strategy is different from the source
           String subjectName =
               subjectNameStrategy.subjectName(topic, isKey, schemaAndDestId.schema);
@@ -307,8 +319,8 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
         } catch (IOException | RestClientException e) {
           log.error(
               String.format(
-                  "Unable to register source schema id %d to destination registry.",
-                  sourceSchemaId),
+                  "Unable to register source schema id %d to destination registry for record %s",
+                  sourceSchemaId, recordPart),
               e);
           return Optional.empty();
         }
