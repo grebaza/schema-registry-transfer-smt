@@ -32,16 +32,17 @@ import io.confluent.kafka.serializers.subject.strategy.SubjectNameStrategy;
 
 @SuppressWarnings("unused")
 public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Transformation<R> {
-  public static final String OVERVIEW_DOC =
-      "Inspect the Confluent KafkaSchemaSerializer's wire-format header to copy schemas from one Schema Registry to another.";
-
   private static final Logger log = LoggerFactory.getLogger(SchemaRegistryTransfer.class);
 
+  public static final ConfigDef CONFIG_DEF;
+
+  private static int callNumber = 0;
   private static final byte MAGIC_BYTE = (byte) 0x0;
   // wire-format is magic byte + an integer, then data
   private static final short WIRE_FORMAT_PREFIX_LENGTH = 1 + (Integer.SIZE / Byte.SIZE);
 
-  public static final ConfigDef CONFIG_DEF;
+  public static final String OVERVIEW_DOC =
+      "Inspect the Confluent KafkaSchemaSerializer's wire-format header to copy schemas from one Schema Registry to another.";
   public static final String SCHEMA_CAPACITY_CONFIG_DOC =
       "The maximum amount of schemas to be stored for each Schema Registry client.";
   public static final Integer SCHEMA_CAPACITY_CONFIG_DEFAULT = 100;
@@ -157,7 +158,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
 
   @Override
   public void configure(Map<String, ?> props) {
-    SimpleConfig config = new SimpleConfig(CONFIG_DEF, props);
+    final SimpleConfig config = new SimpleConfig(CONFIG_DEF, props);
 
     List<String> sourceUrls = config.getList(ConfigName.SRC_SCHEMA_REGISTRY_URL);
     final Map<String, String> sourceProps = new HashMap<>();
@@ -201,6 +202,8 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
     final Object key = r.key();
     final Schema keySchema = r.keySchema();
 
+    callNumber++;
+    log.warn("Iteration {}\n==========", callNumber);
     Object updatedKey = key;
     if (transferKeys) {
       updatedKey = updateKeyValue(key, keySchema, topic, true);
@@ -253,7 +256,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
                   "Unexpected byte[] length %d for Avro record %s.", objectLength, recordPart));
         }
         ByteBuffer b = ByteBuffer.wrap(objectAsBytes);
-        log.info("object dump: {}", Utils.bytesToHex(objectAsBytes));
+        log.warn("object dump: {}", Utils.bytesToHex(objectAsBytes));
 
         destSchemaId = copyAvroSchema(b, topic, true);
         b.putInt(
@@ -281,17 +284,17 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
     if (buffer.get() == MAGIC_BYTE) {
       int sourceSchemaId = buffer.getInt();
 
-      log.info("Looking up schema id {} in Schema Cache for record {}", sourceSchemaId, recordPart);
+      log.warn("Looking up schema id {} in Schema Cache for record {}", sourceSchemaId, recordPart);
       schemaAndDestId = schemaCache.get(sourceSchemaId);
       if (schemaAndDestId != null) {
         log.trace(
             "Schema id {} has been seen before. Not registering with destination registry again for record {}",
             recordPart);
       } else { // cache miss
-        log.info("Schema id {} has not been seen before for record {}", sourceSchemaId, recordPart);
+        log.warn("Schema id {} has not been seen before for record {}", sourceSchemaId, recordPart);
         schemaAndDestId = new SchemaAndId();
         try {
-          log.info(
+          log.warn(
               "Looking up schema id {} in source registry for record {}",
               sourceSchemaId,
               recordPart);
@@ -299,7 +302,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
           schemaAndDestId.schema =
               (AvroSchema) sourceSchemaRegistryClient.getSchemaById(sourceSchemaId);
         } catch (IOException | RestClientException e) {
-          log.info(
+          log.warn(
               String.format(
                   "Unable to fetch source schema id %d for record %s", sourceSchemaId, recordPart),
               e);
@@ -307,7 +310,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
         }
 
         try {
-          log.info(
+          log.warn(
               "Registering schema {} to destination registry for record {}",
               schemaAndDestId.schema,
               recordPart);
