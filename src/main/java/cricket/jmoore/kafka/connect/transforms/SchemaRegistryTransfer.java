@@ -192,6 +192,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
   public void configure(Map<String, ?> props) {
     final SimpleConfig config = new SimpleConfig(CONFIG_DEF, props);
 
+    // source schema-registry config
     List<String> sourceUrls = config.getList(ConfigName.SRC_SCHEMA_REGISTRY_URL);
     final Map<String, String> sourceProps = new HashMap<>();
     sourceProps.put(
@@ -201,6 +202,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
         AbstractKafkaSchemaSerDeConfig.USER_INFO_CONFIG,
         config.getPassword(ConfigName.SRC_USER_INFO).value());
 
+    // destination schema-registry config
     List<String> destUrls = config.getList(ConfigName.DEST_SCHEMA_REGISTRY_URL);
     final Map<String, String> destProps = new HashMap<>();
     destProps.put(
@@ -209,6 +211,16 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
     destProps.put(
         AbstractKafkaSchemaSerDeConfig.USER_INFO_CONFIG,
         config.getPassword(ConfigName.DEST_USER_INFO).value());
+
+    destProps.put(
+        AbstractKafkaSchemaSerDeConfig.AUTO_REGISTER_SCHEMAS,
+        config.getString(ConfigName.DEST_AUTO_REGISTER_SCHEMAS));
+    destProps.put(
+        AbstractKafkaSchemaSerDeConfig.USE_LATEST_VERSION,
+        config.getString(ConfigName.DEST_USE_LATEST_VERSION));
+    destProps.put(
+        AbstractKafkaSchemaSerDeConfig.LATEST_COMPATIBILITY_STRICT,
+        config.getString(ConfigName.DEST_LATEST_COMPATIBILITY_STRICT));
 
     Integer schemaCapacity = config.getInt(ConfigName.SCHEMA_CAPACITY);
 
