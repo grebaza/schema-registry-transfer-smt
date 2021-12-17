@@ -74,16 +74,16 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
       AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_USER_INFO_DEFAULT;
   public static final String DEST_AUTO_REGISTER_SCHEMAS_DOC =
       DEST_PREAMBLE + AbstractKafkaSchemaSerDeConfig.AUTO_REGISTER_SCHEMAS_DOC;
-  public static final String DEST_AUTO_REGISTER_SCHEMAS_DEFAULT =
-      DEST_PREAMBLE + AbstractKafkaSchemaSerDeConfig.AUTO_REGISTER_SCHEMAS_DEFAULT;
+  public static final boolean DEST_AUTO_REGISTER_SCHEMAS_DEFAULT =
+      AbstractKafkaSchemaSerDeConfig.AUTO_REGISTER_SCHEMAS_DEFAULT;
   public static final String DEST_USE_LATEST_VERSION_DOC =
       DEST_PREAMBLE + AbstractKafkaSchemaSerDeConfig.USE_LATEST_VERSION_DOC;
-  public static final String DEST_USE_LATEST_VERSION_DEFAULT =
-      DEST_PREAMBLE + AbstractKafkaSchemaSerDeConfig.USE_LATEST_VERSION_DEFAULT;
+  public static final boolean DEST_USE_LATEST_VERSION_DEFAULT =
+      AbstractKafkaSchemaSerDeConfig.USE_LATEST_VERSION_DEFAULT;
   public static final String DEST_LATEST_COMPATIBILITY_STRICT_DOC =
       DEST_PREAMBLE + AbstractKafkaSchemaSerDeConfig.LATEST_COMPATIBILITY_STRICT_DOC;
-  public static final String DEST_LATEST_COMPATIBILITY_STRICT_DEFAULT =
-      DEST_PREAMBLE + AbstractKafkaSchemaSerDeConfig.LATEST_COMPATIBILITY_STRICT_DEFAULT;
+  public static final boolean DEST_LATEST_COMPATIBILITY_STRICT_DEFAULT =
+      AbstractKafkaSchemaSerDeConfig.LATEST_COMPATIBILITY_STRICT_DEFAULT;
 
   public static final String TRANSFER_KEYS_CONFIG_DOC =
       "Whether or not to copy message key schemas between registries.";
