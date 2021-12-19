@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import org.apache.kafka.common.cache.Cache;
 import org.apache.kafka.common.cache.LRUCache;
@@ -36,7 +37,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
 
   public static final ConfigDef CONFIG_DEF;
 
-  private static int callNumber = 0;
+  private static int smtCalls = 0;
   private static final byte MAGIC_BYTE = (byte) 0x0;
   // wire-format is magic byte + an integer, then data
   private static final short WIRE_FORMAT_PREFIX_LENGTH = 1 + (Integer.SIZE / Byte.SIZE);
@@ -47,7 +48,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
       "The maximum amount of schemas to be stored for each Schema Registry client.";
   public static final Integer SCHEMA_CAPACITY_CONFIG_DEFAULT = 100;
 
-  // source schema-registry configuration
+  // source registry configuration
   public static final String SRC_PREAMBLE = "For source consumer's schema registry, ";
   public static final String SRC_SCHEMA_REGISTRY_CONFIG_DOC =
       "A list of addresses for the Schema Registry to copy from. The consumer's Schema Registry.";
@@ -60,7 +61,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
   public static final String SRC_USER_INFO_CONFIG_DEFAULT =
       AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_USER_INFO_DEFAULT;
 
-  // destination schema-registry configuration
+  // destination registry configuration
   public static final String DEST_PREAMBLE = "For target producer's schema registry, ";
   public static final String DEST_SCHEMA_REGISTRY_CONFIG_DOC =
       "A list of addresses for the Schema Registry to copy to. The producer's Schema Registry.";
@@ -72,18 +73,9 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
       DEST_PREAMBLE + AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_USER_INFO_DOC;
   public static final String DEST_USER_INFO_CONFIG_DEFAULT =
       AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_USER_INFO_DEFAULT;
-  public static final String DEST_AUTO_REGISTER_SCHEMAS_DOC =
-      DEST_PREAMBLE + AbstractKafkaSchemaSerDeConfig.AUTO_REGISTER_SCHEMAS_DOC;
-  public static final boolean DEST_AUTO_REGISTER_SCHEMAS_DEFAULT =
-      AbstractKafkaSchemaSerDeConfig.AUTO_REGISTER_SCHEMAS_DEFAULT;
-  public static final String DEST_USE_LATEST_VERSION_DOC =
-      DEST_PREAMBLE + AbstractKafkaSchemaSerDeConfig.USE_LATEST_VERSION_DOC;
-  public static final boolean DEST_USE_LATEST_VERSION_DEFAULT =
-      AbstractKafkaSchemaSerDeConfig.USE_LATEST_VERSION_DEFAULT;
-  public static final String DEST_LATEST_COMPATIBILITY_STRICT_DOC =
-      DEST_PREAMBLE + AbstractKafkaSchemaSerDeConfig.LATEST_COMPATIBILITY_STRICT_DOC;
-  public static final boolean DEST_LATEST_COMPATIBILITY_STRICT_DEFAULT =
-      AbstractKafkaSchemaSerDeConfig.LATEST_COMPATIBILITY_STRICT_DEFAULT;
+  public static final String DEST_COMPATIBILITY_LEVEL_DOC =
+      DEST_PREAMBLE + "Compatibility type set for schemas. No changes if empty.";
+  public static final String DEST_COMPATIBILITY_LEVEL_DEFAULT = "";
 
   public static final String TRANSFER_KEYS_CONFIG_DOC =
       "Whether or not to copy message key schemas between registries.";
@@ -100,6 +92,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
 
   // caches from the source registry to the destination registry
   private Cache<Integer, SchemaAndId> schemaCache;
+  private String schemaCompatibility;
 
   public SchemaRegistryTransfer() {}
 
@@ -145,23 +138,11 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
                 ConfigDef.Importance.MEDIUM,
                 DEST_USER_INFO_CONFIG_DOC)
             .define(
-                ConfigName.DEST_AUTO_REGISTER_SCHEMAS,
-                ConfigDef.Type.BOOLEAN,
-                DEST_AUTO_REGISTER_SCHEMAS_DEFAULT,
-                ConfigDef.Importance.MEDIUM,
-                DEST_AUTO_REGISTER_SCHEMAS_DOC)
-            .define(
-                ConfigName.DEST_USE_LATEST_VERSION,
-                ConfigDef.Type.BOOLEAN,
-                DEST_USE_LATEST_VERSION_DEFAULT,
+                ConfigName.DEST_COMPATIBILITY_LEVEL,
+                ConfigDef.Type.STRING,
+                DEST_COMPATIBILITY_LEVEL_DEFAULT,
                 ConfigDef.Importance.LOW,
-                DEST_USE_LATEST_VERSION_DOC)
-            .define(
-                ConfigName.DEST_LATEST_COMPATIBILITY_STRICT,
-                ConfigDef.Type.BOOLEAN,
-                DEST_LATEST_COMPATIBILITY_STRICT_DEFAULT,
-                ConfigDef.Importance.LOW,
-                DEST_LATEST_COMPATIBILITY_STRICT_DOC)
+                DEST_COMPATIBILITY_LEVEL_DOC)
             .define(
                 ConfigName.SCHEMA_CAPACITY,
                 ConfigDef.Type.INT,
@@ -192,7 +173,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
   public void configure(Map<String, ?> props) {
     final SimpleConfig config = new SimpleConfig(CONFIG_DEF, props);
 
-    // source schema-registry config
+    // source registry config
     List<String> sourceUrls = config.getList(ConfigName.SRC_SCHEMA_REGISTRY_URL);
     final Map<String, String> sourceProps = new HashMap<>();
     sourceProps.put(
@@ -202,7 +183,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
         AbstractKafkaSchemaSerDeConfig.USER_INFO_CONFIG,
         config.getPassword(ConfigName.SRC_USER_INFO).value());
 
-    // destination schema-registry config
+    // destination registry config
     List<String> destUrls = config.getList(ConfigName.DEST_SCHEMA_REGISTRY_URL);
     final Map<String, String> destProps = new HashMap<>();
     destProps.put(
@@ -212,30 +193,19 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
         AbstractKafkaSchemaSerDeConfig.USER_INFO_CONFIG,
         config.getPassword(ConfigName.DEST_USER_INFO).value());
 
-    destProps.put(
-        AbstractKafkaSchemaSerDeConfig.AUTO_REGISTER_SCHEMAS,
-        config.getString(ConfigName.DEST_AUTO_REGISTER_SCHEMAS));
-    destProps.put(
-        AbstractKafkaSchemaSerDeConfig.USE_LATEST_VERSION,
-        config.getString(ConfigName.DEST_USE_LATEST_VERSION));
-    destProps.put(
-        AbstractKafkaSchemaSerDeConfig.LATEST_COMPATIBILITY_STRICT,
-        config.getString(ConfigName.DEST_LATEST_COMPATIBILITY_STRICT));
-
     Integer schemaCapacity = config.getInt(ConfigName.SCHEMA_CAPACITY);
-
     this.schemaCache = new SynchronizedCache<>(new LRUCache<>(schemaCapacity));
     this.sourceSchemaRegistryClient =
         new CachedSchemaRegistryClient(sourceUrls, schemaCapacity, sourceProps);
     this.destSchemaRegistryClient =
         new CachedSchemaRegistryClient(destUrls, schemaCapacity, destProps);
-
     this.transferKeys = config.getBoolean(ConfigName.TRANSFER_KEYS);
     this.includeHeaders = config.getBoolean(ConfigName.INCLUDE_HEADERS);
 
     // todo: Make the Strategy configurable, may be different for src and dest
     // Strategy for the -key and -value subjects
     this.subjectNameStrategy = new TopicNameStrategy();
+    this.schemaCompatibility = config.getString(ConfigName.DEST_COMPATIBILITY_LEVEL);
   }
 
   @Override
@@ -246,8 +216,8 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
     final Object key = r.key();
     final Schema keySchema = r.keySchema();
 
-    callNumber++;
-    log.trace("Iteration {}\n==========", callNumber);
+    smtCalls++;
+    log.trace("Iteration: {}", smtCalls);
     Object updatedKey = key;
     if (transferKeys) {
       updatedKey = updateKeyValue(key, keySchema, topic, true);
@@ -321,6 +291,35 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
     return updatedKeyValue;
   }
 
+  @FunctionalInterface
+  public interface ThrowingSupplier<T> {
+    T get() throws Exception;
+  }
+
+  static <T> Supplier<Optional<T>> OptionalSupplier(ThrowingSupplier<T> supplier) {
+    return () -> {
+      try {
+        return Optional.ofNullable(supplier.get());
+      } catch (Exception e) {
+        return Optional.empty();
+      }
+    };
+  }
+
+  static <T> Supplier<T> RethrowingSupplier(ThrowingSupplier<T> supplier) {
+    return () -> {
+      try {
+        return supplier.get();
+      } catch (Exception e) {
+        if (e instanceof RuntimeException) {
+          throw (RuntimeException) e;
+        } else {
+          throw new RuntimeException(e);
+        }
+      }
+    };
+  }
+
   protected Optional<Integer> copyAvroSchema(ByteBuffer buffer, String topic, boolean isKey) {
     SchemaAndId schemaAndDestId;
     final String recordPart = isKey == true ? "key" : "value";
@@ -328,52 +327,69 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
     if (buffer.get() == MAGIC_BYTE) {
       int sourceSchemaId = buffer.getInt();
 
-      log.trace(
-          "Looking up schema id {} in Schema Cache for record {}", sourceSchemaId, recordPart);
+      // Lookup schema (first in Cache, and if not found, in source registry)
+      log.trace("Looking up schema id {} in Cache for record {}", sourceSchemaId, recordPart);
       schemaAndDestId = schemaCache.get(sourceSchemaId);
       if (schemaAndDestId != null) {
         log.trace(
-            "Schema id {} has been seen before. Not registering with destination registry again for record {}",
+            "Schema id {} found at Cache for record {}. Not registering in destination registry",
+            sourceSchemaId,
             recordPart);
-      } else { // cache miss
-        log.trace(
-            "Schema id {} has not been seen before for record {}", sourceSchemaId, recordPart);
+      } else {
+        log.trace("Schema id {} not found at Cache for record {}", sourceSchemaId, recordPart);
         schemaAndDestId = new SchemaAndId();
         try {
           log.trace(
               "Looking up schema id {} in source registry for record {}",
               sourceSchemaId,
               recordPart);
-          // Can't do getBySubjectAndId because that requires a Schema object for the strategy
+          // can't do getBySubjectAndId because that requires a Schema object for the strategy
           schemaAndDestId.schema =
               (AvroSchema) sourceSchemaRegistryClient.getSchemaById(sourceSchemaId);
         } catch (IOException | RestClientException e) {
           log.error(
-              String.format(
-                  "Unable to fetch source schema id %d for record %s", sourceSchemaId, recordPart),
-              e);
+              "Unable to fetch schema id {} in source registry for record {}",
+              sourceSchemaId,
+              recordPart);
           throw new ConnectException(e);
         }
 
+        // Get subject from SubjectNameStrategy
+        String subjectName = subjectNameStrategy.subjectName(topic, isKey, schemaAndDestId.schema);
+
+        // Get schema id on destination registry (registering if necessary)
         try {
-          log.trace(
-              "Registering schema {} to destination registry for record {}",
-              schemaAndDestId.schema,
-              recordPart);
-          // It could be possible that the destination naming strategy is different from the source
-          String subjectName =
-              subjectNameStrategy.subjectName(topic, isKey, schemaAndDestId.schema);
+          final AvroSchema schema = schemaAndDestId.schema;
           schemaAndDestId.id =
-              destSchemaRegistryClient.register(subjectName, schemaAndDestId.schema);
-          schemaCache.put(sourceSchemaId, schemaAndDestId);
-        } catch (IOException | RestClientException e) {
+              OptionalSupplier(() -> destSchemaRegistryClient.getId(subjectName, schema))
+                  .get()
+                  .orElseGet(
+                      RethrowingSupplier(
+                          () -> destSchemaRegistryClient.register(subjectName, schema)));
+        } catch (RuntimeException e) {
           log.error(
-              String.format(
-                  "Unable to register source schema id %d to destination registry for record %s",
-                  sourceSchemaId, recordPart),
-              e);
+              "Unable to get or register schema id {} into destination registry for record {}",
+              sourceSchemaId,
+              recordPart);
           return Optional.empty();
         }
+
+        // Change compatibility type
+        if (!this.schemaCompatibility.isEmpty()) {
+          try {
+            RethrowingSupplier(
+                    () ->
+                        destSchemaRegistryClient.updateCompatibility(
+                            subjectName, this.schemaCompatibility))
+                .get();
+          } catch (RuntimeException e) {
+            log.error("Unable to change compatibility type for schema id {}", sourceSchemaId);
+            return Optional.empty();
+          }
+        }
+
+        // Update Schema Cache
+        schemaCache.put(sourceSchemaId, schemaAndDestId);
       }
     } else {
       throw new SerializationException("Unknown magic byte!");
@@ -398,11 +414,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
     String DEST_BASIC_AUTH_CREDENTIALS_SOURCE =
         "dest." + AbstractKafkaSchemaSerDeConfig.BASIC_AUTH_CREDENTIALS_SOURCE;
     String DEST_USER_INFO = "dest." + AbstractKafkaSchemaSerDeConfig.USER_INFO_CONFIG;
-    String DEST_AUTO_REGISTER_SCHEMAS =
-        "dest." + AbstractKafkaSchemaSerDeConfig.AUTO_REGISTER_SCHEMAS;
-    String DEST_USE_LATEST_VERSION = "dest." + AbstractKafkaSchemaSerDeConfig.USE_LATEST_VERSION;
-    String DEST_LATEST_COMPATIBILITY_STRICT =
-        "dest." + AbstractKafkaSchemaSerDeConfig.LATEST_COMPATIBILITY_STRICT;
+    String DEST_COMPATIBILITY_LEVEL = "dest.compatibility.type";
     String SCHEMA_CAPACITY = "schema.capacity";
     String TRANSFER_KEYS = "transfer.message.keys";
     String INCLUDE_HEADERS = "include.message.headers";
