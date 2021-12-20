@@ -73,9 +73,9 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
       DEST_PREAMBLE + AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_USER_INFO_DOC;
   public static final String DEST_USER_INFO_CONFIG_DEFAULT =
       AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_USER_INFO_DEFAULT;
-  public static final String DEST_COMPATIBILITY_LEVEL_DOC =
+  public static final String DEST_COMPATIBILITY_TYPE_DOC =
       DEST_PREAMBLE + "Compatibility type set for schemas. No changes if empty.";
-  public static final String DEST_COMPATIBILITY_LEVEL_DEFAULT = "";
+  public static final String DEST_COMPATIBILITY_TYPE_DEFAULT = "";
 
   public static final String TRANSFER_KEYS_CONFIG_DOC =
       "Whether or not to copy message key schemas between registries.";
@@ -138,11 +138,11 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
                 ConfigDef.Importance.MEDIUM,
                 DEST_USER_INFO_CONFIG_DOC)
             .define(
-                ConfigName.DEST_COMPATIBILITY_LEVEL,
+                ConfigName.DEST_COMPATIBILITY_TYPE,
                 ConfigDef.Type.STRING,
-                DEST_COMPATIBILITY_LEVEL_DEFAULT,
+                DEST_COMPATIBILITY_TYPE_DEFAULT,
                 ConfigDef.Importance.LOW,
-                DEST_COMPATIBILITY_LEVEL_DOC)
+                DEST_COMPATIBILITY_TYPE_DOC)
             .define(
                 ConfigName.SCHEMA_CAPACITY,
                 ConfigDef.Type.INT,
@@ -205,7 +205,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
     // todo: Make the Strategy configurable, may be different for src and dest
     // Strategy for the -key and -value subjects
     this.subjectNameStrategy = new TopicNameStrategy();
-    this.schemaCompatibility = config.getString(ConfigName.DEST_COMPATIBILITY_LEVEL);
+    this.schemaCompatibility = config.getString(ConfigName.DEST_COMPATIBILITY_TYPE);
   }
 
   @Override
@@ -414,7 +414,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
     String DEST_BASIC_AUTH_CREDENTIALS_SOURCE =
         "dest." + AbstractKafkaSchemaSerDeConfig.BASIC_AUTH_CREDENTIALS_SOURCE;
     String DEST_USER_INFO = "dest." + AbstractKafkaSchemaSerDeConfig.USER_INFO_CONFIG;
-    String DEST_COMPATIBILITY_LEVEL = "dest.compatibility.type";
+    String DEST_COMPATIBILITY_TYPE = "dest.compatibility.type";
     String SCHEMA_CAPACITY = "schema.capacity";
     String TRANSFER_KEYS = "transfer.message.keys";
     String INCLUDE_HEADERS = "include.message.headers";
