@@ -216,8 +216,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
     final Object key = r.key();
     final Schema keySchema = r.keySchema();
 
-    smtCalls++;
-    log.trace("Iteration: {}", smtCalls);
+    log.trace("Iteration: {}", ++smtCalls);
     Object updatedKey = key;
     if (transferKeys) {
       updatedKey = updateKeyValue(key, keySchema, topic, true);
@@ -272,14 +271,14 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
         ByteBuffer b = ByteBuffer.wrap(objectAsBytes);
         log.trace("object dump: {}", Utils.bytesToHex(objectAsBytes));
 
-        destSchemaId = copyAvroSchema(b, topic, true);
+        destSchemaId = copyAvroSchema(b, topic, isKey);
         b.putInt(
             1,
             destSchemaId.orElseThrow(
                 () ->
                     new ConnectException(
                         String.format(
-                            "Transform failed. Unable to update record schema id for %s",
+                            "Transform failed. Unable to update schema id for record %s",
                             recordPart))));
         updatedKeyValue = (Object) b.array();
       }
@@ -361,31 +360,28 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
         try {
           final AvroSchema schema = schemaAndDestId.schema;
           schemaAndDestId.id =
-              OptionalSupplier(() -> destSchemaRegistryClient.getId(subjectName, schema))
+              OptionalSupplier(
+                      () -> {
+                        int id = destSchemaRegistryClient.getId(subjectName, schema);
+                        if (!this.schemaCompatibility.isEmpty())
+                          this.updateCompatibility(subjectName);
+                        return id;
+                      })
                   .get()
                   .orElseGet(
                       RethrowingSupplier(
-                          () -> destSchemaRegistryClient.register(subjectName, schema)));
+                          () -> {
+                            int id = destSchemaRegistryClient.register(subjectName, schema);
+                            if (!this.schemaCompatibility.isEmpty())
+                              this.updateCompatibility(subjectName);
+                            return id;
+                          }));
         } catch (RuntimeException e) {
           log.error(
               "Unable to get or register schema id {} into destination registry for record {}",
               sourceSchemaId,
               recordPart);
           return Optional.empty();
-        }
-
-        // Change compatibility type
-        if (!this.schemaCompatibility.isEmpty()) {
-          try {
-            RethrowingSupplier(
-                    () ->
-                        destSchemaRegistryClient.updateCompatibility(
-                            subjectName, this.schemaCompatibility))
-                .get();
-          } catch (RuntimeException e) {
-            log.error("Unable to change compatibility type for schema id {}", sourceSchemaId);
-            return Optional.empty();
-          }
         }
 
         // Update Schema Cache
@@ -395,6 +391,15 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
       throw new SerializationException("Unknown magic byte!");
     }
     return Optional.ofNullable(schemaAndDestId.id);
+  }
+
+  private String updateCompatibility(String subject) throws IOException, RestClientException {
+    try {
+      return this.destSchemaRegistryClient.updateCompatibility(subject, this.schemaCompatibility);
+    } catch (IOException | RestClientException e) {
+      log.error("Unable to change compatibility type for subject {}", subject);
+      throw e;
+    }
   }
 
   @Override
