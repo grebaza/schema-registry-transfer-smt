@@ -206,6 +206,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
     // Strategy for the -key and -value subjects
     this.subjectNameStrategy = new TopicNameStrategy();
     this.schemaCompatibility = config.getString(ConfigName.DEST_COMPATIBILITY_TYPE);
+    log.warn("compatibility.test: {}", schemaCompatibility);
   }
 
   @Override
@@ -356,24 +357,40 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
         // Get subject from SubjectNameStrategy
         String subjectName = subjectNameStrategy.subjectName(topic, isKey, schemaAndDestId.schema);
 
+        // Update compatibility type on destination registry (if necessary)
+        if (!schemaCompatibility.isEmpty()) {
+          try {
+            if (!schemaCompatibility.equals(
+                destSchemaRegistryClient.getCompatibility(subjectName))) {
+              try {
+                updateCompatibility(subjectName);
+              } catch (IOException | RestClientException e) {
+                log.error(
+                    "Unable to update compatibility type of subject {} for record {}",
+                    subjectName,
+                    recordPart);
+                throw new ConnectException(e);
+              }
+            }
+          } catch (IOException | RestClientException e) {
+            log.error(
+                "Unable to get compatibility type of subject {} for record {}",
+                subjectName,
+                recordPart);
+          }
+        }
+
         // Get schema id on destination registry (registering if necessary)
         try {
           final AvroSchema schema = schemaAndDestId.schema;
           schemaAndDestId.id =
-              OptionalSupplier(
-                      () -> {
-                        int id = destSchemaRegistryClient.getId(subjectName, schema);
-                        if (!this.schemaCompatibility.isEmpty())
-                          this.updateCompatibility(subjectName);
-                        return id;
-                      })
+              OptionalSupplier(() -> destSchemaRegistryClient.getId(subjectName, schema))
                   .get()
                   .orElseGet(
                       RethrowingSupplier(
                           () -> {
                             int id = destSchemaRegistryClient.register(subjectName, schema);
-                            if (!this.schemaCompatibility.isEmpty())
-                              this.updateCompatibility(subjectName);
+                            if (!schemaCompatibility.isEmpty()) updateCompatibility(subjectName);
                             return id;
                           }));
         } catch (RuntimeException e) {
@@ -395,7 +412,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
 
   private String updateCompatibility(String subject) throws IOException, RestClientException {
     try {
-      return this.destSchemaRegistryClient.updateCompatibility(subject, this.schemaCompatibility);
+      return destSchemaRegistryClient.updateCompatibility(subject, schemaCompatibility);
     } catch (IOException | RestClientException e) {
       log.error("Unable to change compatibility type for subject {}", subject);
       throw e;
