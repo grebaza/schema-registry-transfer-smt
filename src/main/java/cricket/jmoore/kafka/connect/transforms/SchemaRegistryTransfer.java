@@ -320,6 +320,17 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
     };
   }
 
+  private boolean subjectExists(String subjectName, String recordPart) {
+    try {
+      destSchemaRegistryClient.getCompatibility(subjectName);
+    } catch (IOException | RestClientException e) {
+      log.error(
+          "Unable to get compatibility type of subject {} for record {}", subjectName, recordPart);
+      return false;
+    }
+    return true;
+  }
+
   protected Optional<Integer> copyAvroSchema(ByteBuffer buffer, String topic, boolean isKey) {
     SchemaAndId schemaAndDestId;
     final String recordPart = isKey == true ? "key" : "value";
@@ -360,16 +371,18 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
         // Update compatibility type on destination registry (if necessary)
         if (!schemaCompatibility.isEmpty()) {
           try {
-            if (!schemaCompatibility.equals(
-                destSchemaRegistryClient.getCompatibility(subjectName))) {
-              try {
-                updateCompatibility(subjectName);
-              } catch (IOException | RestClientException e) {
-                log.error(
-                    "Unable to update compatibility type of subject {} for record {}",
-                    subjectName,
-                    recordPart);
-                throw new ConnectException(e);
+            if (this.subjectExists(subjectName, recordPart)) {
+              if (!schemaCompatibility.equals(
+                  destSchemaRegistryClient.getCompatibility(subjectName))) {
+                try {
+                  updateCompatibility(subjectName);
+                } catch (IOException | RestClientException e) {
+                  log.error(
+                      "Unable to update compatibility type of subject {} for record {}",
+                      subjectName,
+                      recordPart);
+                  throw new ConnectException(e);
+                }
               }
             }
           } catch (IOException | RestClientException e) {
@@ -389,8 +402,8 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
                   .orElseGet(
                       RethrowingSupplier(
                           () -> {
-                            int id = destSchemaRegistryClient.register(subjectName, schema);
                             if (!schemaCompatibility.isEmpty()) updateCompatibility(subjectName);
+                            int id = destSchemaRegistryClient.register(subjectName, schema);
                             return id;
                           }));
         } catch (RuntimeException e) {
