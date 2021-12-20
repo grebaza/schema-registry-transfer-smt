@@ -70,13 +70,13 @@
         <confluent.version>6.0.2</confluent.version>
         <confluent.patch.version>-ccs</confluent.patch.version>
         <jackson.version>2.9.7</jackson.version>
-        <jackson.asl.version>1.9.13</jackson.asl.version>
 
         <spotless.version>2.7.0</spotless.version>
 
         <shade.prefix>cricket.jmoore</shade.prefix>
         <kafka.connect.maven.plugin.version>0.11.3</kafka.connect.maven.plugin.version>
         <maven.release.plugin.version>3.0.0-M1</maven.release.plugin.version>
+        <avro.version>1.9.2</avro.version>
     </properties>
 
     <dependencies>
@@ -125,30 +125,23 @@
         </dependency>
 
         <dependency>
-            <groupId>com.101tec</groupId>
-            <artifactId>zkclient</artifactId>
-            <version>0.11</version>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson.version}</version>
             <scope>provided</scope>
         </dependency>
 
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
+            <artifactId>jackson-core</artifactId>
             <version>${jackson.version}</version>
-            <!-- <scope>provided</scope>-->
-        </dependency>
-
-        <dependency>
-            <groupId>org.codehaus.jackson</groupId>
-            <artifactId>jackson-core-asl</artifactId>
-            <version>${jackson.asl.version}</version>
             <scope>provided</scope>
         </dependency>
 
         <dependency>
-            <groupId>org.codehaus.jackson</groupId>
-            <artifactId>jackson-mapper-asl</artifactId>
-            <version>${jackson.asl.version}</version>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+            <version>${jackson.version}</version>
             <scope>provided</scope>
         </dependency>
 
@@ -184,7 +177,7 @@
         <dependency>
             <groupId>org.apache.avro</groupId>
             <artifactId>avro</artifactId>
-            <version>1.9.2</version>
+            <version>${avro.version}</version>
         </dependency>
 
         <dependency>
@@ -202,10 +195,18 @@
                     <groupId>org.apache.kafka</groupId>
                     <artifactId>kafka-clients</artifactId>
                 </exclusion>
-                <!-- <exclusion>-->
-                <!--     <groupId>com.fasterxml.jackson.core</groupId>-->
-                <!--     <artifactId>jackson-databind</artifactId>-->
-                <!-- </exclusion>-->
+                <exclusion>
+                  <groupId>io.swagger</groupId>
+                  <artifactId>swagger-annotations</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>io.swagger</groupId>
+                  <artifactId>swagger-core</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>org.glassfish.jersey.ext</groupId>
+                  <artifactId>jersey-bean-validation</artifactId>
+                </exclusion>
             </exclusions>
         </dependency>
 
