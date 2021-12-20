@@ -194,7 +194,7 @@ public class SchemaRegistryMock implements BeforeEachCallback, AfterEachCallback
     try {
       final int id = this.schemaRegistryClient.register(subject, schema);
       this.stubFor.apply(
-          WireMock.get(WireMock.urlEqualTo(SCHEMA_BY_ID_PATTERN + id))
+          WireMock.get(WireMock.urlEqualTo(SCHEMA_BY_ID_PATTERN + id + "?fetchMaxId=false"))
               .willReturn(
                   ResponseDefinitionBuilder.okForJson(new SchemaString(schema.toString()))));
       log.debug("Registered schema {}", id);
@@ -318,7 +318,8 @@ public class SchemaRegistryMock implements BeforeEachCallback, AfterEachCallback
         final ResponseDefinition responseDefinition,
         final FileSource files,
         final Parameters parameters) {
-      String versionStr = Iterables.get(this.urlSplitter.split(request.getUrl()), 3);
+      String versionStrFull = Iterables.get(this.urlSplitter.split(request.getUrl()), 3);
+      String versionStr = versionStrFull.substring(0, versionStrFull.indexOf("?"));
       SchemaMetadata metadata;
       if (versionStr.equals("latest")) {
         metadata = SchemaRegistryMock.this.getSubjectVersion(getSubject(request), versionStr);
