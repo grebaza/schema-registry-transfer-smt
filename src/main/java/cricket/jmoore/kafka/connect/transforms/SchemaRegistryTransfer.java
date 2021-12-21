@@ -93,6 +93,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
   // caches from the source registry to the destination registry
   private Cache<Integer, SchemaAndId> schemaCache;
   private String schemaCompatibility;
+  private String currentSchemaCompatibility;
 
   public SchemaRegistryTransfer() {}
 
@@ -322,9 +323,9 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
 
   private boolean subjectExists(String subjectName, String recordPart) {
     try {
-      destSchemaRegistryClient.getCompatibility(subjectName);
+      this.currentSchemaCompatibility = destSchemaRegistryClient.getCompatibility(subjectName);
     } catch (IOException | RestClientException e) {
-      log.error(
+      log.warn(
           "Unable to get compatibility type of subject {} for record {}", subjectName, recordPart);
       return false;
     }
@@ -339,18 +340,22 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
       int sourceSchemaId = buffer.getInt();
 
       // Lookup schema (first in Cache, and if not found, in source registry)
-      log.trace("Looking up schema id {} in Cache for record {}", sourceSchemaId, recordPart);
+      if (smtCalls < 100) {
+        log.warn("Looking up schema id {} in Cache for record {}", sourceSchemaId, recordPart);
+      }
       schemaAndDestId = schemaCache.get(sourceSchemaId);
       if (schemaAndDestId != null) {
-        log.trace(
-            "Schema id {} found at Cache for record {}. Not registering in destination registry",
-            sourceSchemaId,
-            recordPart);
+        if (smtCalls < 5) {
+          log.warn(
+              "Schema id {} found at Cache for record {}. Not registering in destination registry",
+              sourceSchemaId,
+              recordPart);
+        }
       } else {
-        log.trace("Schema id {} not found at Cache for record {}", sourceSchemaId, recordPart);
+        log.warn("Schema id {} not found at Cache for record {}", sourceSchemaId, recordPart);
         schemaAndDestId = new SchemaAndId();
         try {
-          log.trace(
+          log.warn(
               "Looking up schema id {} in source registry for record {}",
               sourceSchemaId,
               recordPart);
@@ -369,30 +374,22 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
         String subjectName = subjectNameStrategy.subjectName(topic, isKey, schemaAndDestId.schema);
 
         // Update compatibility type on destination registry (if necessary)
-        if (!schemaCompatibility.isEmpty()) {
-          try {
-            if (this.subjectExists(subjectName, recordPart)) {
-              if (!schemaCompatibility.equals(
-                  destSchemaRegistryClient.getCompatibility(subjectName))) {
-                try {
-                  updateCompatibility(subjectName);
-                } catch (IOException | RestClientException e) {
-                  log.error(
-                      "Unable to update compatibility type of subject {} for record {}",
-                      subjectName,
-                      recordPart);
-                  throw new ConnectException(e);
-                }
-              }
-            }
-          } catch (IOException | RestClientException e) {
-            log.error(
-                "Unable to get compatibility type of subject {} for record {}",
+        // Subject exists or not
+        /*if (subjectExists(subjectName, recordPart)) {
+          if (!schemaCompatibility.equals(currentSchemaCompatibility)) {
+            try {
+              log.warn("Subject name {}", subjectName);
+              String compatibilityLevelUpdated = updateCompatibility(subjectName);
+              log.warn("Schema compatibility updated to {}", compatibilityLevelUpdated);
+            } catch (IOException | RestClientException e) {
+              log.error(
+                "Unable to update compatibility type of subject {} for record {}",
                 subjectName,
                 recordPart);
+              throw new ConnectException(e);
+            }
           }
-        }
-
+        }*/
         // Get schema id on destination registry (registering if necessary)
         try {
           final AvroSchema schema = schemaAndDestId.schema;
@@ -402,8 +399,15 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
                   .orElseGet(
                       RethrowingSupplier(
                           () -> {
-                            if (!schemaCompatibility.isEmpty()) updateCompatibility(subjectName);
                             int id = destSchemaRegistryClient.register(subjectName, schema);
+                            if (!schemaCompatibility.isEmpty()) {
+                              String compatibilityLevelRegistered =
+                                  updateCompatibility(subjectName);
+                              log.warn(
+                                  "Schema compatibility registered as {} for subject {}",
+                                  compatibilityLevelRegistered,
+                                  subjectName);
+                            }
                             return id;
                           }));
         } catch (RuntimeException e) {
@@ -413,7 +417,6 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
               recordPart);
           return Optional.empty();
         }
-
         // Update Schema Cache
         schemaCache.put(sourceSchemaId, schemaAndDestId);
       }
