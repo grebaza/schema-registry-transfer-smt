@@ -355,12 +355,17 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
 
         // Get subject from SubjectNameStrategy
         String subjectName = subjectNameStrategy.subjectName(topic, isKey, schemaAndDestId.schema);
+        log.trace("Subject on destination registrty {}", subjectName);
         String schemaCompatibility = getSchemaCompatibility(subjectName);
         boolean isSubjectOnRegistry = schemaCompatibility == null ? false : true;
         boolean isSchemaCompatibilityForChange =
             !newSchemaCompatibility.equals(schemaCompatibility == null ? "" : schemaCompatibility);
 
         // Get schema id on destination registry (registering if necessary)
+        log.trace(
+            "Registering schema on destination registry for subject {} and schema id {}",
+            subjectName,
+            sourceSchemaId);
         try {
           final AvroSchema schema = schemaAndDestId.schema;
           schemaAndDestId.id =
