@@ -221,7 +221,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
     if (transferKeys) {
       updatedKey = updateKeyValue(key, keySchema, topic, true);
     } else {
-      log.info(
+      log.debug(
           "Skipping record key translation. {} has been to false. Keys will be passed as-is.",
           ConfigName.TRANSFER_KEYS);
     }
@@ -259,7 +259,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
 
     if (ConnectSchemaUtil.isBytesSchema(objectSchema) || object instanceof byte[]) {
       if (object == null) {
-        log.trace("Passing through null record {}.", recordPart);
+        log.debug("Passing through null record {}.", recordPart);
       } else {
         byte[] objectAsBytes = (byte[]) object;
         int objectLength = objectAsBytes.length;
@@ -327,18 +327,18 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
       int sourceSchemaId = buffer.getInt();
 
       // Lookup schema (first in Cache, and if not found, in source registry)
-      log.trace("Looking up schema id {} in Cache for record {}", sourceSchemaId, recordPart);
+      log.debug("Looking up schema id {} in Cache for record {}", sourceSchemaId, recordPart);
       schemaAndDestId = schemaCache.get(sourceSchemaId);
       if (schemaAndDestId != null) {
-        log.trace(
+        log.debug(
             "Schema id {} found at Cache for record {}. Not registering in destination registry",
             sourceSchemaId,
             recordPart);
       } else {
-        log.trace("Schema id {} not found at Cache for record {}", sourceSchemaId, recordPart);
+        log.debug("Schema id {} not found at Cache for record {}", sourceSchemaId, recordPart);
         schemaAndDestId = new SchemaAndId();
         try {
-          log.warn(
+          log.debug(
               "Looking up schema id {} in source registry for record {}",
               sourceSchemaId,
               recordPart);
@@ -355,14 +355,14 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
 
         // Get subject from SubjectNameStrategy
         String subjectName = subjectNameStrategy.subjectName(topic, isKey, schemaAndDestId.schema);
-        log.trace("Subject on destination registry {}", subjectName);
+        log.debug("Subject on destination registry {}", subjectName);
         String schemaCompatibility = getSchemaCompatibility(subjectName);
         boolean isSubjectOnRegistry = schemaCompatibility == null ? false : true;
         boolean isSchemaCompatibilityForChange =
             !newSchemaCompatibility.equals(schemaCompatibility == null ? "" : schemaCompatibility);
 
         // Get schema id on destination registry (registering if necessary)
-        log.trace(
+        log.debug(
             "Registering schema on destination registry for subject {} and schema id {}",
             subjectName,
             sourceSchemaId);
@@ -400,7 +400,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
 
   private String getSchemaCompatibility(String subject) {
     try {
-      log.info("get schema compatibility type for subject {}", subject);
+      log.debug("get schema compatibility type for subject {}", subject);
       return destSchemaRegistryClient.getCompatibility(subject);
     } catch (IOException | RestClientException e) {
       log.warn("Unable to get schema compatibility type of subject {}", subject);
@@ -410,10 +410,10 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
 
   private String updateSchemaCompatibility(String subject) throws IOException, RestClientException {
     try {
-      log.info("Updating compatibility type of subject {}...", subject);
+      log.trace("Updating compatibility type of subject {}...", subject);
       String compatibility =
           destSchemaRegistryClient.updateCompatibility(subject, newSchemaCompatibility);
-      log.info("Schema compatibility registered as {} for subject {}", compatibility, subject);
+      log.debug("Schema compatibility registered as {} for subject {}", compatibility, subject);
       return compatibility;
     } catch (IOException | RestClientException e) {
       log.error("Unable to change schema compatibility type for subject {}", subject);
