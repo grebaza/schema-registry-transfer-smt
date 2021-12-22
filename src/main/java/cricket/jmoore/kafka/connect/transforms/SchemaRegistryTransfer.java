@@ -355,7 +355,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
 
         // Get subject from SubjectNameStrategy
         String subjectName = subjectNameStrategy.subjectName(topic, isKey, schemaAndDestId.schema);
-        log.trace("Subject on destination registrty {}", subjectName);
+        log.trace("Subject on destination registry {}", subjectName);
         String schemaCompatibility = getSchemaCompatibility(subjectName);
         boolean isSubjectOnRegistry = schemaCompatibility == null ? false : true;
         boolean isSchemaCompatibilityForChange =
