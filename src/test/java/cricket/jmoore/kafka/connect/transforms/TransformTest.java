@@ -1,7 +1,6 @@
 /* Licensed under Apache-2.0 */
 package cricket.jmoore.kafka.connect.transforms;
 
-import static cricket.jmoore.kafka.connect.transforms.SchemaRegistryTransfer.ConfigName;
 import static org.apache.avro.Schema.Type.BOOLEAN;
 import static org.apache.avro.Schema.Type.INT;
 import static org.apache.avro.Schema.Type.STRING;
@@ -36,11 +35,14 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import io.confluent.kafka.schemaregistry.ParsedSchema;
 import io.confluent.kafka.schemaregistry.avro.AvroSchema;
 import io.confluent.kafka.schemaregistry.client.SchemaMetadata;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import io.confluent.kafka.serializers.NonRecordContainer;
+import io.confluent.kafka.serializers.subject.RecordNameStrategy;
+import io.confluent.kafka.serializers.subject.TopicRecordNameStrategy;
 
 @SuppressWarnings("unchecked")
 public class TransformTest {
@@ -85,6 +87,14 @@ public class TransformTest {
               .stringType()
               .noDefault()
               .endRecord());
+  public static final AvroSchema KEY_RECORD_SCHEMA =
+      new AvroSchema(
+          SchemaBuilder.record("Company")
+              .namespace("cricket.jmoore.kafka.connect.transforms")
+              .fields()
+              .requiredString("name")
+              .requiredString("address")
+              .endRecord());
 
   @RegisterExtension
   final SchemaRegistryMock sourceSchemaRegistry =
@@ -109,19 +119,20 @@ public class TransformTest {
 
   private Map<String, Object> getRequiredTransformConfigs() {
     Map<String, Object> configs = new HashMap<>();
-    configs.put(ConfigName.SRC_SCHEMA_REGISTRY_URL, sourceSchemaRegistry.getUrl());
-    configs.put(ConfigName.DEST_SCHEMA_REGISTRY_URL, destSchemaRegistry.getUrl());
+    configs.put(
+        SchemaRegistryTransferConfig.SRC_SCHEMA_REGISTRY_URL, sourceSchemaRegistry.getUrl());
+    configs.put(SchemaRegistryTransferConfig.DEST_SCHEMA_REGISTRY_URL, destSchemaRegistry.getUrl());
     return configs;
   }
 
   private void configure(boolean copyKeys) {
-    smtConfiguration.put(ConfigName.TRANSFER_KEYS, copyKeys);
+    smtConfiguration.put(SchemaRegistryTransferConfig.TRANSFER_KEYS, copyKeys);
     smt.configure(smtConfiguration);
   }
 
   private void configure(boolean copyKeys, boolean copyHeaders) {
-    smtConfiguration.put(ConfigName.TRANSFER_KEYS, copyKeys);
-    smtConfiguration.put(ConfigName.INCLUDE_HEADERS, copyHeaders);
+    smtConfiguration.put(SchemaRegistryTransferConfig.TRANSFER_KEYS, copyKeys);
+    smtConfiguration.put(SchemaRegistryTransferConfig.INCLUDE_HEADERS, copyHeaders);
     smt.configure(smtConfiguration);
   }
 
@@ -130,28 +141,32 @@ public class TransformTest {
     if (credentialSource == ExplicitAuthType.USER_INFO) {
       if (sourceUserInfo != null) {
         smtConfiguration.put(
-            ConfigName.SRC_BASIC_AUTH_CREDENTIALS_SOURCE, Constants.USER_INFO_SOURCE);
-        smtConfiguration.put(ConfigName.SRC_USER_INFO, sourceUserInfo);
+            SchemaRegistryTransferConfig.SRC_BASIC_AUTH_CREDENTIALS_SOURCE,
+            Constants.USER_INFO_SOURCE);
+        smtConfiguration.put(SchemaRegistryTransferConfig.SRC_USER_INFO, sourceUserInfo);
       }
 
       if (destUserInfo != null) {
         smtConfiguration.put(
-            ConfigName.DEST_BASIC_AUTH_CREDENTIALS_SOURCE, Constants.USER_INFO_SOURCE);
-        smtConfiguration.put(ConfigName.DEST_USER_INFO, destUserInfo);
+            SchemaRegistryTransferConfig.DEST_BASIC_AUTH_CREDENTIALS_SOURCE,
+            Constants.USER_INFO_SOURCE);
+        smtConfiguration.put(SchemaRegistryTransferConfig.DEST_USER_INFO, destUserInfo);
       }
     } else {
       if (sourceUserInfo != null) {
         String url = sourceSchemaRegistry.getUrl();
         url = url.replace("://", "://" + sourceUserInfo + "@");
-        smtConfiguration.put(ConfigName.SRC_SCHEMA_REGISTRY_URL, url);
+        smtConfiguration.put(SchemaRegistryTransferConfig.SRC_SCHEMA_REGISTRY_URL, url);
 
         if (credentialSource == ExplicitAuthType.URL) {
-          smtConfiguration.put(ConfigName.SRC_BASIC_AUTH_CREDENTIALS_SOURCE, Constants.URL_SOURCE);
+          smtConfiguration.put(
+              SchemaRegistryTransferConfig.SRC_BASIC_AUTH_CREDENTIALS_SOURCE, Constants.URL_SOURCE);
         } else if (credentialSource == ExplicitAuthType.NULL) {
           // For an explicit null case, set both the URL and UserInfo to confirm that neither is
           // found
-          smtConfiguration.put(ConfigName.SRC_BASIC_AUTH_CREDENTIALS_SOURCE, null);
-          smtConfiguration.put(ConfigName.SRC_USER_INFO, sourceUserInfo);
+          smtConfiguration.put(
+              SchemaRegistryTransferConfig.SRC_BASIC_AUTH_CREDENTIALS_SOURCE, null);
+          smtConfiguration.put(SchemaRegistryTransferConfig.SRC_USER_INFO, sourceUserInfo);
         } else {
           // For null ExplicitAuthType, insert no key and rely on implicit default.
         }
@@ -160,21 +175,34 @@ public class TransformTest {
       if (destUserInfo != null) {
         String url = destSchemaRegistry.getUrl();
         url = url.replace("://", "://" + destUserInfo + "@");
-        smtConfiguration.put(ConfigName.DEST_SCHEMA_REGISTRY_URL, url);
+        smtConfiguration.put(SchemaRegistryTransferConfig.DEST_SCHEMA_REGISTRY_URL, url);
 
         if (credentialSource == ExplicitAuthType.URL) {
-          smtConfiguration.put(ConfigName.DEST_BASIC_AUTH_CREDENTIALS_SOURCE, Constants.URL_SOURCE);
+          smtConfiguration.put(
+              SchemaRegistryTransferConfig.DEST_BASIC_AUTH_CREDENTIALS_SOURCE,
+              Constants.URL_SOURCE);
         } else if (credentialSource == ExplicitAuthType.NULL) {
           // For an explicit null case, set both the URL and UserInfo to confirm that neither is
           // found
-          smtConfiguration.put(ConfigName.DEST_BASIC_AUTH_CREDENTIALS_SOURCE, null);
-          smtConfiguration.put(ConfigName.DEST_USER_INFO, destUserInfo);
+          smtConfiguration.put(
+              SchemaRegistryTransferConfig.DEST_BASIC_AUTH_CREDENTIALS_SOURCE, null);
+          smtConfiguration.put(SchemaRegistryTransferConfig.DEST_USER_INFO, destUserInfo);
         } else {
           // For null ExplicitAuthType, insert no key and rely on implicit default.
         }
       }
     }
 
+    smt.configure(smtConfiguration);
+  }
+
+  private void configure(
+      boolean copyKeys, Object valueSubjectNameStrategy, Object keySubjectNameStrategy) {
+    smtConfiguration.put(SchemaRegistryTransferConfig.TRANSFER_KEYS, copyKeys);
+    smtConfiguration.put(
+        SchemaRegistryTransferConfig.DEST_VALUE_SUBJECT_NAME_STRATEGY, valueSubjectNameStrategy);
+    smtConfiguration.put(
+        SchemaRegistryTransferConfig.DEST_KEY_SUBJECT_NAME_STRATEGY, keySubjectNameStrategy);
     smt.configure(smtConfiguration);
   }
 
@@ -848,6 +876,163 @@ public class TransformTest {
       log.info("applying transformation");
       assertThrows(ConnectException.class, () -> smt.apply(nextRecord));
 
+    } catch (IOException | RestClientException e) {
+      fail(e);
+    }
+  }
+
+  @Test
+  public void testRecordNameSubjectStrategy() {
+    configure(true, RecordNameStrategy.class, RecordNameStrategy.class);
+
+    // Create bogus schema in destination so that source and destination ids differ
+    log.info("Registering schema in destination registry");
+    destSchemaRegistry.registerSchema(UUID.randomUUID().toString(), false, BOOLEAN_SCHEMA);
+
+    // Create new schemas for source registry
+    AvroSchema keySchema = KEY_RECORD_SCHEMA;
+    AvroSchema valueSchema = NAME_SCHEMA;
+
+    // key subject in destination schema registry is record name, NOT default topicName-key
+    String destKeySubject = keySchema.name();
+    // value subject in destination schema registry is record name, NOT default topicName-value
+    String destValueSubject = valueSchema.name();
+
+    registerAndApplyTransformation(keySchema, valueSchema, destKeySubject, destValueSubject);
+  }
+
+  @Test
+  public void testTopicRecordNameSubjectStrategy() {
+    configure(true, TopicRecordNameStrategy.class, TopicRecordNameStrategy.class);
+
+    // Create bogus schema in destination so that source and destination ids differ
+    log.info("Registering schema in destination registry");
+    destSchemaRegistry.registerSchema(UUID.randomUUID().toString(), false, BOOLEAN_SCHEMA);
+
+    // Create new schemas for source registry
+    AvroSchema keySchema = KEY_RECORD_SCHEMA;
+    AvroSchema valueSchema = NAME_SCHEMA;
+
+    // key subject in destination schema registry is topic-record name, NOT default topicName-key
+    String destKeySubject = TOPIC + "-" + keySchema.name();
+    // value subject in destination schema registry is topic-record name, NOT default
+    // topicName-value
+    String destValueSubject = TOPIC + "-" + valueSchema.name();
+    registerAndApplyTransformation(keySchema, valueSchema, destKeySubject, destValueSubject);
+  }
+
+  private void registerAndApplyTransformation(
+      AvroSchema keySchema,
+      AvroSchema valueSchema,
+      String destKeySubject,
+      String destValueSubject) {
+    log.info("Registering schemas in source registry");
+    int sourceKeyId = sourceSchemaRegistry.registerSchema(TOPIC, true, keySchema);
+    final String keySubject = TOPIC + "-key";
+    assertEquals(1, sourceKeyId, "An empty registry starts at id=1");
+    int sourceValueId = sourceSchemaRegistry.registerSchema(TOPIC, false, valueSchema);
+    final String valueSubject = TOPIC + "-value";
+    assertEquals(2, sourceValueId, "unique schema ids monotonically increase");
+
+    SchemaRegistryClient sourceClient = sourceSchemaRegistry.getSchemaRegistryClient();
+    int numSourceKeyVersions = 0;
+    int numSourceValueVersions = 0;
+    try {
+      numSourceKeyVersions = sourceClient.getAllVersions(keySubject).size();
+      assertEquals(
+          1,
+          numSourceKeyVersions,
+          "the source registry subject contains the pre-registered key schema");
+      numSourceValueVersions = sourceClient.getAllVersions(valueSubject).size();
+      assertEquals(
+          1,
+          numSourceValueVersions,
+          "the source registry subject contains the pre-registered value schema");
+    } catch (IOException | RestClientException e) {
+      fail(e);
+    }
+
+    byte[] key;
+    byte[] value;
+    ConnectRecord appliedRecord;
+    int destinationKeyId;
+    int destinationValueId;
+
+    try {
+      GenericData.Record keyRecord =
+          new GenericRecordBuilder(KEY_RECORD_SCHEMA.rawSchema())
+              .set("name", "cName")
+              .set("address", "cAddress")
+              .build();
+
+      GenericData.Record valueRecord =
+          new GenericRecordBuilder(NAME_SCHEMA.rawSchema())
+              .set("first", "fname")
+              .set("last", "lname")
+              .build();
+
+      ByteArrayOutputStream keyStream = encodeAvroObject(keySchema, sourceKeyId, keyRecord);
+      ByteArrayOutputStream valueStream = encodeAvroObject(valueSchema, sourceValueId, valueRecord);
+
+      key = keyStream.toByteArray();
+      value = valueStream.toByteArray();
+      ConnectRecord record = createRecord(key, value);
+
+      // check the destination has no versions for this subject
+      SchemaRegistryClient destClient = destSchemaRegistry.getSchemaRegistryClient();
+      List<Integer> destKeyVersions = destClient.getAllVersions(destKeySubject);
+      assertTrue(destKeyVersions.isEmpty(), "key versions not found on the destination registry");
+      List<Integer> destValueVersions = destClient.getAllVersions(destValueSubject);
+      assertTrue(
+          destValueVersions.isEmpty(), "value versions not found on the destination registry");
+
+      // The transform will pass for key and value with byte schemas
+      log.info("applying transformation");
+      appliedRecord = assertDoesNotThrow(() -> smt.apply(record));
+
+      assertEquals(record.keySchema(), appliedRecord.keySchema(), "key schema unchanged");
+      assertEquals(record.valueSchema(), appliedRecord.valueSchema(), "value schema unchanged");
+
+      // check the value schema was copied, and the destination now has some version
+      destKeyVersions = destClient.getAllVersions(destKeySubject);
+      assertEquals(
+          numSourceKeyVersions,
+          destKeyVersions.size(),
+          "source and destination registries have the same amount of schemas for the key subject");
+      destValueVersions = destClient.getAllVersions(destValueSubject);
+      assertEquals(
+          numSourceValueVersions,
+          destValueVersions.size(),
+          "source and destination registries have the same amount of schemas for the value subject");
+
+      // Verify that the ids for the source and destination are different
+      SchemaMetadata keyMetadata =
+          destClient.getSchemaMetadata(destKeySubject, destKeyVersions.get(0));
+      destinationKeyId = keyMetadata.getId();
+      log.debug("source_keyId={} ; dest_keyId={}", sourceKeyId, destinationKeyId);
+      assertTrue(
+          sourceKeyId < destinationKeyId,
+          "destination id should be different and higher since that registry already had schemas");
+      SchemaMetadata valueMetadata =
+          destClient.getSchemaMetadata(destValueSubject, destValueVersions.get(0));
+      destinationValueId = valueMetadata.getId();
+      log.debug("source_valueId={} ; dest_valueId={}", sourceValueId, destinationValueId);
+      assertTrue(
+          sourceValueId < destinationValueId,
+          "destination id should be different and higher since that registry already had schemas");
+
+      // Verify the schemas are the same
+      ParsedSchema sourceKeySchema = sourceClient.getSchemaById(sourceKeyId);
+      ParsedSchema destKeySchema = new AvroSchema(keyMetadata.getSchema());
+
+      assertEquals(destKeySchema, sourceKeySchema, "source server returned same key schema");
+      assertEquals(keySchema, destKeySchema, "destination server returned same key schema");
+      assertEquals(sourceKeySchema, destKeySchema, "both servers' key schemas match");
+      ParsedSchema sourceValueSchema = sourceClient.getSchemaById(sourceValueId);
+      ParsedSchema destValueSchema = new AvroSchema(valueMetadata.getSchema());
+      assertEquals(destValueSchema, sourceValueSchema, "source server returned same value schema");
+      assertEquals(valueSchema, destValueSchema, "destination server returned same value schema");
+      assertEquals(sourceValueSchema, destValueSchema, "both servers' value schemas match");
     } catch (IOException | RestClientException e) {
       fail(e);
     }

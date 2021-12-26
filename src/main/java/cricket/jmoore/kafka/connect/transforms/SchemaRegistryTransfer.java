@@ -3,209 +3,48 @@ package cricket.jmoore.kafka.connect.transforms;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
-import java.util.function.Supplier;
 
-import org.apache.kafka.common.cache.Cache;
-import org.apache.kafka.common.cache.LRUCache;
-import org.apache.kafka.common.cache.SynchronizedCache;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.connect.connector.ConnectRecord;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.transforms.Transformation;
-import org.apache.kafka.connect.transforms.util.NonEmptyListValidator;
-import org.apache.kafka.connect.transforms.util.SimpleConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import io.confluent.kafka.schemaregistry.avro.AvroSchema;
-import io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient;
+import io.confluent.kafka.schemaregistry.ParsedSchema;
 import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
-import io.confluent.kafka.serializers.AbstractKafkaSchemaSerDeConfig;
-import io.confluent.kafka.serializers.subject.TopicNameStrategy;
-import io.confluent.kafka.serializers.subject.strategy.SubjectNameStrategy;
 
 @SuppressWarnings("unused")
 public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Transformation<R> {
   private static final Logger log = LoggerFactory.getLogger(SchemaRegistryTransfer.class);
 
-  public static final ConfigDef CONFIG_DEF;
-
-  private static int smtCalls = 0;
   private static final byte MAGIC_BYTE = (byte) 0x0;
+  private static final int KEY_VALUE_MIN_LEN = 5;
   // wire-format is magic byte + an integer, then data
   private static final short WIRE_FORMAT_PREFIX_LENGTH = 1 + (Integer.SIZE / Byte.SIZE);
 
-  public static final String OVERVIEW_DOC =
-      "Inspect the Confluent KafkaSchemaSerializer's wire-format header to copy schemas from one Schema Registry to another.";
-  public static final String SCHEMA_CAPACITY_CONFIG_DOC =
-      "The maximum amount of schemas to be stored for each Schema Registry client.";
-  public static final Integer SCHEMA_CAPACITY_CONFIG_DEFAULT = 100;
-
-  // source registry configuration
-  public static final String SRC_PREAMBLE = "For source consumer's schema registry, ";
-  public static final String SRC_SCHEMA_REGISTRY_CONFIG_DOC =
-      "A list of addresses for the Schema Registry to copy from. The consumer's Schema Registry.";
-  public static final String SRC_BASIC_AUTH_CREDENTIALS_SOURCE_CONFIG_DOC =
-      SRC_PREAMBLE + AbstractKafkaSchemaSerDeConfig.BASIC_AUTH_CREDENTIALS_SOURCE_DOC;
-  public static final String SRC_BASIC_AUTH_CREDENTIALS_SOURCE_CONFIG_DEFAULT =
-      AbstractKafkaSchemaSerDeConfig.BASIC_AUTH_CREDENTIALS_SOURCE_DEFAULT;
-  public static final String SRC_USER_INFO_CONFIG_DOC =
-      SRC_PREAMBLE + AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_USER_INFO_DOC;
-  public static final String SRC_USER_INFO_CONFIG_DEFAULT =
-      AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_USER_INFO_DEFAULT;
-
-  // destination registry configuration
-  public static final String DEST_PREAMBLE = "For target producer's schema registry, ";
-  public static final String DEST_SCHEMA_REGISTRY_CONFIG_DOC =
-      "A list of addresses for the Schema Registry to copy to. The producer's Schema Registry.";
-  public static final String DEST_BASIC_AUTH_CREDENTIALS_SOURCE_CONFIG_DOC =
-      DEST_PREAMBLE + AbstractKafkaSchemaSerDeConfig.BASIC_AUTH_CREDENTIALS_SOURCE_DOC;
-  public static final String DEST_BASIC_AUTH_CREDENTIALS_SOURCE_CONFIG_DEFAULT =
-      AbstractKafkaSchemaSerDeConfig.BASIC_AUTH_CREDENTIALS_SOURCE_DEFAULT;
-  public static final String DEST_USER_INFO_CONFIG_DOC =
-      DEST_PREAMBLE + AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_USER_INFO_DOC;
-  public static final String DEST_USER_INFO_CONFIG_DEFAULT =
-      AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_USER_INFO_DEFAULT;
-  public static final String DEST_COMPATIBILITY_TYPE_DOC =
-      DEST_PREAMBLE + "Compatibility type set for schemas. No changes if empty.";
-  public static final String DEST_COMPATIBILITY_TYPE_DEFAULT = "";
-
-  public static final String TRANSFER_KEYS_CONFIG_DOC =
-      "Whether or not to copy message key schemas between registries.";
-  public static final Boolean TRANSFER_KEYS_CONFIG_DEFAULT = true;
-  public static final String INCLUDE_HEADERS_CONFIG_DOC =
-      "Whether or not to preserve the Kafka Connect Record headers.";
-  public static final Boolean INCLUDE_HEADERS_CONFIG_DEFAULT = true;
-
-  private static final int KEY_VALUE_MIN_LEN = 5;
-  private CachedSchemaRegistryClient sourceSchemaRegistryClient;
-  private CachedSchemaRegistryClient destSchemaRegistryClient;
-  private SubjectNameStrategy subjectNameStrategy;
-  private boolean transferKeys, includeHeaders;
-
-  // caches from the source registry to the destination registry
-  private Cache<Integer, SchemaAndId> schemaCache;
-  private String newSchemaCompatibility;
+  private SchemaRegistryTransferConfig config;
+  private static int smtCalls = 0;
 
   public SchemaRegistryTransfer() {}
 
-  static {
-    CONFIG_DEF =
-        (new ConfigDef())
-            .define(
-                ConfigName.SRC_SCHEMA_REGISTRY_URL,
-                ConfigDef.Type.LIST,
-                ConfigDef.NO_DEFAULT_VALUE,
-                new NonEmptyListValidator(),
-                ConfigDef.Importance.HIGH,
-                SRC_SCHEMA_REGISTRY_CONFIG_DOC)
-            .define(
-                ConfigName.DEST_SCHEMA_REGISTRY_URL,
-                ConfigDef.Type.LIST,
-                ConfigDef.NO_DEFAULT_VALUE,
-                new NonEmptyListValidator(),
-                ConfigDef.Importance.HIGH,
-                DEST_SCHEMA_REGISTRY_CONFIG_DOC)
-            .define(
-                ConfigName.SRC_BASIC_AUTH_CREDENTIALS_SOURCE,
-                ConfigDef.Type.STRING,
-                SRC_BASIC_AUTH_CREDENTIALS_SOURCE_CONFIG_DEFAULT,
-                ConfigDef.Importance.MEDIUM,
-                SRC_BASIC_AUTH_CREDENTIALS_SOURCE_CONFIG_DOC)
-            .define(
-                ConfigName.SRC_USER_INFO,
-                ConfigDef.Type.PASSWORD,
-                SRC_USER_INFO_CONFIG_DEFAULT,
-                ConfigDef.Importance.MEDIUM,
-                SRC_USER_INFO_CONFIG_DOC)
-            .define(
-                ConfigName.DEST_BASIC_AUTH_CREDENTIALS_SOURCE,
-                ConfigDef.Type.STRING,
-                DEST_BASIC_AUTH_CREDENTIALS_SOURCE_CONFIG_DEFAULT,
-                ConfigDef.Importance.MEDIUM,
-                DEST_BASIC_AUTH_CREDENTIALS_SOURCE_CONFIG_DOC)
-            .define(
-                ConfigName.DEST_USER_INFO,
-                ConfigDef.Type.PASSWORD,
-                DEST_USER_INFO_CONFIG_DEFAULT,
-                ConfigDef.Importance.MEDIUM,
-                DEST_USER_INFO_CONFIG_DOC)
-            .define(
-                ConfigName.DEST_COMPATIBILITY_TYPE,
-                ConfigDef.Type.STRING,
-                DEST_COMPATIBILITY_TYPE_DEFAULT,
-                ConfigDef.Importance.LOW,
-                DEST_COMPATIBILITY_TYPE_DOC)
-            .define(
-                ConfigName.SCHEMA_CAPACITY,
-                ConfigDef.Type.INT,
-                SCHEMA_CAPACITY_CONFIG_DEFAULT,
-                ConfigDef.Importance.LOW,
-                SCHEMA_CAPACITY_CONFIG_DOC)
-            .define(
-                ConfigName.TRANSFER_KEYS,
-                ConfigDef.Type.BOOLEAN,
-                TRANSFER_KEYS_CONFIG_DEFAULT,
-                ConfigDef.Importance.MEDIUM,
-                TRANSFER_KEYS_CONFIG_DOC)
-            .define(
-                ConfigName.INCLUDE_HEADERS,
-                ConfigDef.Type.BOOLEAN,
-                INCLUDE_HEADERS_CONFIG_DEFAULT,
-                ConfigDef.Importance.MEDIUM,
-                INCLUDE_HEADERS_CONFIG_DOC);
-    // todo: Other properties might be useful, e.g. the Subject Strategies
-  }
-
   @Override
   public ConfigDef config() {
-    return CONFIG_DEF;
+    return SchemaRegistryTransferConfig.config();
   }
 
   @Override
   public void configure(Map<String, ?> props) {
-    final SimpleConfig config = new SimpleConfig(CONFIG_DEF, props);
+    this.config = new SchemaRegistryTransferConfig(props);
+  }
 
-    // source registry config
-    List<String> sourceUrls = config.getList(ConfigName.SRC_SCHEMA_REGISTRY_URL);
-    final Map<String, String> sourceProps = new HashMap<>();
-    sourceProps.put(
-        AbstractKafkaSchemaSerDeConfig.BASIC_AUTH_CREDENTIALS_SOURCE,
-        "SRC_" + config.getString(ConfigName.SRC_BASIC_AUTH_CREDENTIALS_SOURCE));
-    sourceProps.put(
-        AbstractKafkaSchemaSerDeConfig.USER_INFO_CONFIG,
-        config.getPassword(ConfigName.SRC_USER_INFO).value());
-
-    // destination registry config
-    List<String> destUrls = config.getList(ConfigName.DEST_SCHEMA_REGISTRY_URL);
-    final Map<String, String> destProps = new HashMap<>();
-    destProps.put(
-        AbstractKafkaSchemaSerDeConfig.BASIC_AUTH_CREDENTIALS_SOURCE,
-        "DEST_" + config.getString(ConfigName.DEST_BASIC_AUTH_CREDENTIALS_SOURCE));
-    destProps.put(
-        AbstractKafkaSchemaSerDeConfig.USER_INFO_CONFIG,
-        config.getPassword(ConfigName.DEST_USER_INFO).value());
-
-    Integer schemaCapacity = config.getInt(ConfigName.SCHEMA_CAPACITY);
-    this.schemaCache = new SynchronizedCache<>(new LRUCache<>(schemaCapacity));
-    this.sourceSchemaRegistryClient =
-        new CachedSchemaRegistryClient(sourceUrls, schemaCapacity, sourceProps);
-    this.destSchemaRegistryClient =
-        new CachedSchemaRegistryClient(destUrls, schemaCapacity, destProps);
-    this.transferKeys = config.getBoolean(ConfigName.TRANSFER_KEYS);
-    this.includeHeaders = config.getBoolean(ConfigName.INCLUDE_HEADERS);
-
-    // todo: Make the Strategy configurable, may be different for src and dest
-    // Strategy for the -key and -value subjects
-    this.subjectNameStrategy = new TopicNameStrategy();
-    this.newSchemaCompatibility = config.getString(ConfigName.DEST_COMPATIBILITY_TYPE);
+  @Override
+  public void close() {
+    this.config = null;
   }
 
   @Override
@@ -218,12 +57,12 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
 
     log.trace("Iteration: {}", ++smtCalls);
     Object updatedKey = key;
-    if (transferKeys) {
+    if (config.transferKeys) {
       updatedKey = updateKeyValue(key, keySchema, topic, true);
     } else {
       log.debug(
           "Skipping record key translation. {} has been to false. Keys will be passed as-is.",
-          ConfigName.TRANSFER_KEYS);
+          SchemaRegistryTransferConfig.TRANSFER_KEYS);
     }
 
     // Transcribe the value's schema id
@@ -232,7 +71,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
 
     Object updatedValue = updateKeyValue(value, valueSchema, topic, false);
 
-    return includeHeaders
+    return config.includeHeaders
         ? r.newRecord(
             topic,
             r.kafkaPartition(),
@@ -271,7 +110,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
         ByteBuffer b = ByteBuffer.wrap(objectAsBytes);
         log.trace("object dump: {}", Utils.bytesToHex(objectAsBytes));
 
-        destSchemaId = copyAvroSchema(b, topic, isKey);
+        destSchemaId = translateRegistrySchema(b, topic, isKey);
         b.putInt(
             1,
             destSchemaId.orElseThrow(
@@ -290,37 +129,9 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
     return updatedKeyValue;
   }
 
-  @FunctionalInterface
-  public interface ThrowingSupplier<T> {
-    T get() throws Exception;
-  }
-
-  static <T> Supplier<Optional<T>> OptionalSupplier(ThrowingSupplier<T> supplier) {
-    return () -> {
-      try {
-        return Optional.ofNullable(supplier.get());
-      } catch (Exception e) {
-        return Optional.empty();
-      }
-    };
-  }
-
-  static <T> Supplier<T> RethrowingSupplier(ThrowingSupplier<T> supplier) {
-    return () -> {
-      try {
-        return supplier.get();
-      } catch (Exception e) {
-        if (e instanceof RuntimeException) {
-          throw (RuntimeException) e;
-        } else {
-          throw new RuntimeException(e);
-        }
-      }
-    };
-  }
-
-  protected Optional<Integer> copyAvroSchema(ByteBuffer buffer, String topic, boolean isKey) {
-    SchemaAndId schemaAndDestId;
+  protected Optional<Integer> translateRegistrySchema(
+      ByteBuffer buffer, String topic, boolean isKey) {
+    ParsedSchemaAndId schemaAndDestId;
     final String recordPart = isKey == true ? "key" : "value";
 
     if (buffer.get() == MAGIC_BYTE) {
@@ -328,7 +139,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
 
       // Lookup schema (first in Cache, and if not found, in source registry)
       log.debug("Looking up schema id {} in Cache for record {}", sourceSchemaId, recordPart);
-      schemaAndDestId = schemaCache.get(sourceSchemaId);
+      schemaAndDestId = config.schemaCache.get(sourceSchemaId);
       if (schemaAndDestId != null) {
         log.debug(
             "Schema id {} found at Cache for record {}. Not registering in destination registry",
@@ -336,15 +147,14 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
             recordPart);
       } else {
         log.debug("Schema id {} not found at Cache for record {}", sourceSchemaId, recordPart);
-        schemaAndDestId = new SchemaAndId();
+        schemaAndDestId = new ParsedSchemaAndId();
         try {
           log.debug(
               "Looking up schema id {} in source registry for record {}",
               sourceSchemaId,
               recordPart);
           // can't do getBySubjectAndId because that requires a Schema object for the strategy
-          schemaAndDestId.schema =
-              (AvroSchema) sourceSchemaRegistryClient.getSchemaById(sourceSchemaId);
+          schemaAndDestId.schema = config.sourceSchemaRegistryClient.getSchemaById(sourceSchemaId);
         } catch (IOException | RestClientException e) {
           log.error(
               "Unable to fetch schema id {} in source registry for record {}",
@@ -354,12 +164,16 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
         }
 
         // Get subject from SubjectNameStrategy
-        String subjectName = subjectNameStrategy.subjectName(topic, isKey, schemaAndDestId.schema);
+        String subjectName =
+            isKey
+                ? config.keySubjectNameStrategy.subjectName(topic, isKey, schemaAndDestId.schema)
+                : config.valueSubjectNameStrategy.subjectName(topic, isKey, schemaAndDestId.schema);
         log.debug("Subject on destination registry {}", subjectName);
         String schemaCompatibility = getSchemaCompatibility(subjectName);
         boolean isSubjectOnRegistry = schemaCompatibility == null ? false : true;
         boolean isSchemaCompatibilityForChange =
-            !newSchemaCompatibility.equals(schemaCompatibility == null ? "" : schemaCompatibility);
+            !config.newSchemaCompatibility.equals(
+                schemaCompatibility == null ? "" : schemaCompatibility);
 
         // Get schema id on destination registry (registering if necessary)
         log.debug(
@@ -367,20 +181,21 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
             subjectName,
             sourceSchemaId);
         try {
-          final AvroSchema schema = schemaAndDestId.schema;
+          final ParsedSchema schema = schemaAndDestId.schema;
           schemaAndDestId.id =
-              OptionalSupplier(() -> destSchemaRegistryClient.getId(subjectName, schema))
+              Utils.OptionalSupplier(
+                      () -> config.destSchemaRegistryClient.getId(subjectName, schema))
                   .get()
                   .orElseGet(
-                      RethrowingSupplier(
+                      Utils.RethrowingSupplier(
                           () -> {
                             int id;
                             if (isSubjectOnRegistry) {
                               if (isSchemaCompatibilityForChange)
                                 updateSchemaCompatibility(subjectName);
-                              id = destSchemaRegistryClient.register(subjectName, schema);
+                              id = config.destSchemaRegistryClient.register(subjectName, schema);
                             } else {
-                              id = destSchemaRegistryClient.register(subjectName, schema);
+                              id = config.destSchemaRegistryClient.register(subjectName, schema);
                               if (isSchemaCompatibilityForChange)
                                 updateSchemaCompatibility(subjectName);
                             }
@@ -390,7 +205,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
           return Optional.empty();
         }
         // Update Schema Cache
-        schemaCache.put(sourceSchemaId, schemaAndDestId);
+        config.schemaCache.put(sourceSchemaId, schemaAndDestId);
       }
     } else {
       throw new SerializationException("Unknown magic byte!");
@@ -401,7 +216,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
   private String getSchemaCompatibility(String subject) {
     try {
       log.debug("get schema compatibility type for subject {}", subject);
-      return destSchemaRegistryClient.getCompatibility(subject);
+      return config.destSchemaRegistryClient.getCompatibility(subject);
     } catch (IOException | RestClientException e) {
       log.warn("Unable to get schema compatibility type of subject {}", subject);
       return null;
@@ -412,69 +227,13 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
     try {
       log.trace("Updating compatibility type of subject {}...", subject);
       String compatibility =
-          destSchemaRegistryClient.updateCompatibility(subject, newSchemaCompatibility);
+          config.destSchemaRegistryClient.updateCompatibility(
+              subject, config.newSchemaCompatibility);
       log.debug("Schema compatibility registered as {} for subject {}", compatibility, subject);
       return compatibility;
     } catch (IOException | RestClientException e) {
       log.error("Unable to change schema compatibility type for subject {}", subject);
       throw e;
-    }
-  }
-
-  @Override
-  public void close() {
-    this.sourceSchemaRegistryClient = null;
-    this.destSchemaRegistryClient = null;
-  }
-
-  interface ConfigName {
-    String SRC_SCHEMA_REGISTRY_URL =
-        "src." + AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG;
-    String SRC_BASIC_AUTH_CREDENTIALS_SOURCE =
-        "src." + AbstractKafkaSchemaSerDeConfig.BASIC_AUTH_CREDENTIALS_SOURCE;
-    String SRC_USER_INFO = "src." + AbstractKafkaSchemaSerDeConfig.USER_INFO_CONFIG;
-    String DEST_SCHEMA_REGISTRY_URL =
-        "dest." + AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG;
-    String DEST_BASIC_AUTH_CREDENTIALS_SOURCE =
-        "dest." + AbstractKafkaSchemaSerDeConfig.BASIC_AUTH_CREDENTIALS_SOURCE;
-    String DEST_USER_INFO = "dest." + AbstractKafkaSchemaSerDeConfig.USER_INFO_CONFIG;
-    String DEST_COMPATIBILITY_TYPE = "dest.compatibility.type";
-    String SCHEMA_CAPACITY = "schema.capacity";
-    String TRANSFER_KEYS = "transfer.message.keys";
-    String INCLUDE_HEADERS = "include.message.headers";
-  }
-
-  private static class SchemaAndId {
-    private Integer id;
-    private AvroSchema schema;
-
-    SchemaAndId() {}
-
-    SchemaAndId(int id, AvroSchema schema) {
-      this.id = id;
-      this.schema = schema;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (o == null || getClass() != o.getClass()) {
-        return false;
-      }
-      SchemaAndId schemaAndId = (SchemaAndId) o;
-      return Objects.equals(id, schemaAndId.id) && Objects.equals(schema, schemaAndId.schema);
-    }
-
-    @Override
-    public int hashCode() {
-      return Objects.hash(id, schema);
-    }
-
-    @Override
-    public String toString() {
-      return "SchemaAndId{" + "id=" + id + ", schema=" + schema + '}';
     }
   }
 }
