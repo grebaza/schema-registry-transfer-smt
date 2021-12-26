@@ -129,7 +129,7 @@ public class SchemaRegistryTransfer<R extends ConnectRecord<R>> implements Trans
     return updatedKeyValue;
   }
 
-  protected Optional<Integer> translateRegistrySchema(
+  private Optional<Integer> translateRegistrySchema(
       ByteBuffer buffer, String topic, boolean isKey) {
     ParsedSchemaAndId schemaAndDestId;
     final String recordPart = isKey == true ? "key" : "value";
