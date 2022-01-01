@@ -79,7 +79,10 @@ Configuration Parameter | Default | Description
 ----------------------- | ------- | -----------
 **transfer.message.keys** | true | Indicates whether Avro schemas from message keys in source records should be copied to the destination Registry.
 **include.message.headers** | true | Indicates whether message headers from source records should be preserved after the transform.
-**schema.capacity** | 100 | Capacity of schemas that can be cached in each `CachedSchemaRegistryClient`
+**schema.capacity** | 100 | Capacity of schemas that can be cached in each `CachedSchemaRegistryClient`.
+**dest.compatibility.type** | "" | Compatibility type for topics on destination Registry.
+**key.subject.name.strategy** | io.confluent.kafka.serializers.subject.TopicNameStrategy | Key subject name strategy class on destination Registry.
+**value.subject.name.strategy** | io.confluent.kafka.serializers.subject.TopicNameStrategy | Value subject name strategy class on destination Registry.
 
 ## Embedded Schema Registry Client Configuration
 
