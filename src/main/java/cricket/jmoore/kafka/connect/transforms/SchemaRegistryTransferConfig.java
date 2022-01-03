@@ -10,6 +10,7 @@ import org.apache.kafka.common.cache.LRUCache;
 import org.apache.kafka.common.cache.SynchronizedCache;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.ConfigDef;
+import org.apache.kafka.common.config.SslConfigs;
 import org.apache.kafka.connect.transforms.util.NonEmptyListValidator;
 
 import io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient;
@@ -29,6 +30,58 @@ public class SchemaRegistryTransferConfig extends AbstractConfig {
       "src." + AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG;
   private static final String SRC_SCHEMA_REGISTRY_DOC =
       "A list of addresses for the Schema Registry to copy from. The consumer's Schema Registry.";
+
+  private static final String SRC_SSL_TRUSTSTORE_LOCATION_CONFIG =
+      "src." + SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG;
+  private static final String SRC_SSL_TRUSTSTORE_LOCATION_CONFIG_DOC =
+      SRC_PREAMBLE + SslConfigs.SSL_TRUSTSTORE_LOCATION_DOC;
+  private static final String SRC_SSL_TRUSTSTORE_LOCATION_CONFIG_DEFAULT = "";
+  private static final String SRC_SSL_TRUSTSTORE_PASSWORD_CONFIG =
+      "src." + SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG;
+  private static final String SRC_SSL_TRUSTSTORE_PASSWORD_CONFIG_DOC =
+      SRC_PREAMBLE + SslConfigs.SSL_TRUSTSTORE_PASSWORD_DOC;
+  private static final String SRC_SSL_TRUSTSTORE_PASSWORD_CONFIG_DEFAULT = "";
+  private static final String SRC_SSL_KEYSTORE_LOCATION_CONFIG =
+      "src." + SslConfigs.SSL_KEYSTORE_LOCATION_CONFIG;
+  private static final String SRC_SSL_KEYSTORE_LOCATION_CONFIG_DOC =
+      SRC_PREAMBLE + SslConfigs.SSL_KEYSTORE_LOCATION_DOC;
+  private static final String SRC_SSL_KEYSTORE_LOCATION_CONFIG_DEFAULT = "";
+  private static final String SRC_SSL_KEYSTORE_PASSWORD_CONFIG =
+      "src." + SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG;
+  private static final String SRC_SSL_KEYSTORE_PASSWORD_CONFIG_DOC =
+      SRC_PREAMBLE + SslConfigs.SSL_KEYSTORE_PASSWORD_DOC;
+  private static final String SRC_SSL_KEYSTORE_PASSWORD_CONFIG_DEFAULT = "";
+  private static final String SRC_SSL_KEY_PASSWORD_CONFIG =
+      "src." + SslConfigs.SSL_KEY_PASSWORD_CONFIG;
+  private static final String SRC_SSL_KEY_PASSWORD_CONFIG_DOC =
+      SRC_PREAMBLE + SslConfigs.SSL_KEY_PASSWORD_DOC;
+  private static final String SRC_SSL_KEY_PASSWORD_CONFIG_DEFAULT = "";
+
+  private static final String DEST_SSL_TRUSTSTORE_LOCATION_CONFIG =
+      "dest." + SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG;
+  private static final String DEST_SSL_TRUSTSTORE_LOCATION_CONFIG_DOC =
+      DEST_PREAMBLE + SslConfigs.SSL_TRUSTSTORE_LOCATION_DOC;
+  private static final String DEST_SSL_TRUSTSTORE_LOCATION_CONFIG_DEFAULT = "";
+  private static final String DEST_SSL_TRUSTSTORE_PASSWORD_CONFIG =
+      "dest." + SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG;
+  private static final String DEST_SSL_TRUSTSTORE_PASSWORD_CONFIG_DOC =
+      DEST_PREAMBLE + SslConfigs.SSL_TRUSTSTORE_PASSWORD_DOC;
+  private static final String DEST_SSL_TRUSTSTORE_PASSWORD_CONFIG_DEFAULT = "";
+  private static final String DEST_SSL_KEYSTORE_LOCATION_CONFIG =
+      "dest." + SslConfigs.SSL_KEYSTORE_LOCATION_CONFIG;
+  private static final String DEST_SSL_KEYSTORE_LOCATION_CONFIG_DOC =
+      DEST_PREAMBLE + SslConfigs.SSL_KEYSTORE_LOCATION_DOC;
+  private static final String DEST_SSL_KEYSTORE_LOCATION_CONFIG_DEFAULT = "";
+  private static final String DEST_SSL_KEYSTORE_PASSWORD_CONFIG =
+      "dest." + SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG;
+  private static final String DEST_SSL_KEYSTORE_PASSWORD_CONFIG_DOC =
+      DEST_PREAMBLE + SslConfigs.SSL_KEYSTORE_PASSWORD_DOC;
+  private static final String DEST_SSL_KEYSTORE_PASSWORD_CONFIG_DEFAULT = "";
+  private static final String DEST_SSL_KEY_PASSWORD_CONFIG =
+      "dest." + SslConfigs.SSL_KEY_PASSWORD_CONFIG;
+  private static final String DEST_SSL_KEY_PASSWORD_CONFIG_DOC =
+      DEST_PREAMBLE + SslConfigs.SSL_KEY_PASSWORD_DOC;
+  private static final String DEST_SSL_KEY_PASSWORD_CONFIG_DEFAULT = "";
 
   public static final String SRC_BASIC_AUTH_CREDENTIALS_SOURCE =
       "src." + AbstractKafkaSchemaSerDeConfig.BASIC_AUTH_CREDENTIALS_SOURCE;
@@ -117,6 +170,20 @@ public class SchemaRegistryTransferConfig extends AbstractConfig {
         "SRC_" + getString(SRC_BASIC_AUTH_CREDENTIALS_SOURCE));
     sourceProps.put(
         AbstractKafkaSchemaSerDeConfig.USER_INFO_CONFIG, getPassword(SRC_USER_INFO).value());
+    sourceProps.put(
+        SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG,
+        "SRC_" + getString(SRC_SSL_TRUSTSTORE_LOCATION_CONFIG));
+    sourceProps.put(
+        SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG,
+        "SRC_" + getString(SRC_SSL_TRUSTSTORE_PASSWORD_CONFIG));
+    sourceProps.put(
+        SslConfigs.SSL_KEYSTORE_LOCATION_CONFIG,
+        "SRC_" + getString(SRC_SSL_KEYSTORE_LOCATION_CONFIG));
+    sourceProps.put(
+        SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG,
+        "SRC_" + getString(SRC_SSL_KEYSTORE_PASSWORD_CONFIG));
+    sourceProps.put(
+        SslConfigs.SSL_KEY_PASSWORD_CONFIG, "SRC_" + getString(SRC_SSL_KEY_PASSWORD_CONFIG));
 
     // destination registry config
     List<String> destUrls = getList(DEST_SCHEMA_REGISTRY_URL);
@@ -126,6 +193,20 @@ public class SchemaRegistryTransferConfig extends AbstractConfig {
         "DEST_" + getString(DEST_BASIC_AUTH_CREDENTIALS_SOURCE));
     destProps.put(
         AbstractKafkaSchemaSerDeConfig.USER_INFO_CONFIG, getPassword(DEST_USER_INFO).value());
+    sourceProps.put(
+        SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG,
+        "DEST_" + getString(DEST_SSL_TRUSTSTORE_LOCATION_CONFIG));
+    sourceProps.put(
+        SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG,
+        "DEST_" + getString(DEST_SSL_TRUSTSTORE_PASSWORD_CONFIG));
+    sourceProps.put(
+        SslConfigs.SSL_KEYSTORE_LOCATION_CONFIG,
+        "DEST_" + getString(DEST_SSL_KEYSTORE_LOCATION_CONFIG));
+    sourceProps.put(
+        SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG,
+        "DEST_" + getString(DEST_SSL_KEYSTORE_PASSWORD_CONFIG));
+    sourceProps.put(
+        SslConfigs.SSL_KEY_PASSWORD_CONFIG, "DEST_" + getString(DEST_SSL_KEY_PASSWORD_CONFIG));
 
     Integer schemaCapacity = getInt(SCHEMA_CAPACITY);
     schemaCache = new SynchronizedCache<>(new LRUCache<>(schemaCapacity));
@@ -219,7 +300,67 @@ public class SchemaRegistryTransferConfig extends AbstractConfig {
             ConfigDef.Type.CLASS,
             TopicNameStrategy.class,
             ConfigDef.Importance.MEDIUM,
-            DEST_VALUE_SUBJECT_NAME_STRATEGY_DOC);
+            DEST_VALUE_SUBJECT_NAME_STRATEGY_DOC)
+        .define(
+            SRC_SSL_TRUSTSTORE_LOCATION_CONFIG,
+            ConfigDef.Type.STRING,
+            SRC_SSL_TRUSTSTORE_LOCATION_CONFIG_DEFAULT,
+            ConfigDef.Importance.MEDIUM,
+            SRC_SSL_TRUSTSTORE_LOCATION_CONFIG_DOC)
+        .define(
+            DEST_SSL_TRUSTSTORE_LOCATION_CONFIG,
+            ConfigDef.Type.STRING,
+            DEST_SSL_TRUSTSTORE_LOCATION_CONFIG_DEFAULT,
+            ConfigDef.Importance.MEDIUM,
+            DEST_SSL_TRUSTSTORE_LOCATION_CONFIG_DOC)
+        .define(
+            SRC_SSL_TRUSTSTORE_PASSWORD_CONFIG,
+            ConfigDef.Type.STRING,
+            SRC_SSL_TRUSTSTORE_PASSWORD_CONFIG_DEFAULT,
+            ConfigDef.Importance.MEDIUM,
+            SRC_SSL_TRUSTSTORE_PASSWORD_CONFIG_DOC)
+        .define(
+            DEST_SSL_TRUSTSTORE_PASSWORD_CONFIG,
+            ConfigDef.Type.STRING,
+            DEST_SSL_TRUSTSTORE_PASSWORD_CONFIG_DEFAULT,
+            ConfigDef.Importance.MEDIUM,
+            DEST_SSL_TRUSTSTORE_PASSWORD_CONFIG_DOC)
+        .define(
+            SRC_SSL_KEYSTORE_LOCATION_CONFIG,
+            ConfigDef.Type.STRING,
+            SRC_SSL_KEYSTORE_LOCATION_CONFIG_DEFAULT,
+            ConfigDef.Importance.MEDIUM,
+            SRC_SSL_KEYSTORE_LOCATION_CONFIG_DOC)
+        .define(
+            DEST_SSL_KEYSTORE_LOCATION_CONFIG,
+            ConfigDef.Type.STRING,
+            DEST_SSL_KEYSTORE_LOCATION_CONFIG_DEFAULT,
+            ConfigDef.Importance.MEDIUM,
+            DEST_SSL_KEYSTORE_LOCATION_CONFIG_DOC)
+        .define(
+            SRC_SSL_KEYSTORE_PASSWORD_CONFIG,
+            ConfigDef.Type.STRING,
+            SRC_SSL_KEYSTORE_PASSWORD_CONFIG_DEFAULT,
+            ConfigDef.Importance.MEDIUM,
+            SRC_SSL_KEYSTORE_PASSWORD_CONFIG_DOC)
+        .define(
+            DEST_SSL_KEYSTORE_PASSWORD_CONFIG,
+            ConfigDef.Type.STRING,
+            DEST_SSL_KEYSTORE_PASSWORD_CONFIG_DEFAULT,
+            ConfigDef.Importance.MEDIUM,
+            DEST_SSL_KEYSTORE_PASSWORD_CONFIG_DOC)
+        .define(
+            SRC_SSL_KEY_PASSWORD_CONFIG,
+            ConfigDef.Type.STRING,
+            SRC_SSL_KEY_PASSWORD_CONFIG_DEFAULT,
+            ConfigDef.Importance.MEDIUM,
+            SRC_SSL_KEY_PASSWORD_CONFIG_DOC)
+        .define(
+            DEST_SSL_KEY_PASSWORD_CONFIG,
+            ConfigDef.Type.STRING,
+            DEST_SSL_KEY_PASSWORD_CONFIG_DEFAULT,
+            ConfigDef.Importance.MEDIUM,
+            DEST_SSL_KEY_PASSWORD_CONFIG_DOC);
     // todo: Other properties might be useful
   }
 }
