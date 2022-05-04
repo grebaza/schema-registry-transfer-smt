@@ -80,9 +80,15 @@ Configuration Parameter | Default | Description
 **transfer.message.keys** | true | Indicates whether Avro schemas from message keys in source records should be copied to the destination Registry.
 **include.message.headers** | true | Indicates whether message headers from source records should be preserved after the transform.
 **schema.capacity** | 100 | Capacity of schemas that can be cached in each `CachedSchemaRegistryClient`.
-**dest.compatibility.type** | "" | Compatibility type for topics on destination Registry.
+**dest.compatibility.type** | "" | Compatibility type for topics on destination Registry. Look [here](https://docs.confluent.io/platform/current/schema-registry/avro.html#compatibility-types) for options.
 **key.subject.name.strategy** | io.confluent.kafka.serializers.subject.TopicNameStrategy | Key subject name strategy class on destination Registry.
 **value.subject.name.strategy** | io.confluent.kafka.serializers.subject.TopicNameStrategy | Value subject name strategy class on destination Registry.
+**(src\|dest).schema.registry.url** | | URL for source and destination Registries.
+**(src\|dest).ssl.truststore.location** | | The location of the trust store file.
+**(src\|dest).ssl.truststore.password** | | The password for the trust store file. If a password is not set, trust store file configured will still be used, but integrity checking is disabled. Trust store password is not supported for PEM format.
+**(src\|dest).ssl.keystore.location** | | The location of the key store file. This is optional for client and can be used for two-way authentication for client.
+**(src\|dest).ssl.keystore.password** | | The store password for the key store file. This is optional for client and only needed if 'ssl.keystore.location' is configured. Key store password is not supported for PEM format.
+**(src\|dest).ssl.key.password** | | The password of the private key in the key store file or the PEM key specified in `ssl.keystore.key`. This is required for clients only if two-way authentication is configured.
 
 ## Embedded Schema Registry Client Configuration
 
